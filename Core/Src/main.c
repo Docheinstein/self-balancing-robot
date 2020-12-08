@@ -353,6 +353,11 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 
+	for (int i = 0; i < 100; i++) {
+		toggleLed1();
+		osDelay(100);
+	}
+
   /* USER CODE END Error_Handler_Debug */
 }
 
