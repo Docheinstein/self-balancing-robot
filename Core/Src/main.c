@@ -298,6 +298,11 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void toggleLed1()
+{
+    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -311,9 +316,9 @@ void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
+  while (1) {
+	  toggleLed1();
+	  osDelay(100);
   }
   /* USER CODE END 5 */
 }
