@@ -1,7 +1,7 @@
 #ifndef SERIAL_H_
 #define SERIAL_H_
 
-#include "stdio.h"
+#include "printf.h"
 
 #define println(message, ...) printf(message "\r\n", ##__VA_ARGS__)
 

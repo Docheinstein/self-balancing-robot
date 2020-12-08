@@ -1,6 +1,7 @@
 #MicroXplorer Configuration settings - do not modify
-FREERTOS.IPParameters=Tasks01
+FREERTOS.IPParameters=Tasks01,configENABLE_FPU
 FREERTOS.Tasks01=defaultTask,0,128,StartDefaultTask,Default,NULL,Dynamic,NULL,NULL
+FREERTOS.configENABLE_FPU=1
 File.Version=6
 GPIO.groupedBy=Group By Peripherals
 KeepUserPlacement=false
