@@ -1,6 +1,7 @@
 #ifndef LSM6DSL_H
 #define LSM6DSL_H
 
+#include "stdbool.h"
 #include "stm32l4xx_hal.h"
 
 // ============== I2C ==================
@@ -67,5 +68,9 @@ HAL_StatusTypeDef LSM6DSL_Write_Register(uint8_t reg, uint8_t value);
 
 void LSM6DSL_Assert_Healthy();
 
+HAL_StatusTypeDef LSM6DSL_Read_Status(uint8_t *value);
+
+bool LSM6DSL_Is_Temperature_Data_Ready();
+HAL_StatusTypeDef LSM6DSL_Read_Temperature(float *temperature); // C°
 
 #endif /* LSM6DSL_H */

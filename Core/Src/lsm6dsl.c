@@ -44,7 +44,7 @@ HAL_StatusTypeDef LSM6DSL_Read_Registers_2(uint8_t reg_h, uint8_t reg_l, uint16_
 	if ((status = LSM6DSL_Read_Register(reg_h, &val_h)) != HAL_OK)
 		return status;
 
-	if ((status = LSM6DSL_Read_Register(reg_h, &val_l)) != HAL_OK)
+	if ((status = LSM6DSL_Read_Register(reg_l, &val_l)) != HAL_OK)
 		return status;
 
 	*out = (val_h << 8) | val_l;
@@ -79,3 +79,38 @@ void LSM6DSL_Assert_Healthy()
 		// exit(255);
 	}
 }
+
+HAL_StatusTypeDef LSM6DSL_Read_Status(uint8_t *value)
+{
+	debug("Reading status...");
+	return LSM6DSL_Read_Register(LSM6DSL_REG_STATUS, value);
+}
+
+bool LSM6DSL_Is_Temperature_Data_Ready()
+{
+	uint8_t ls6mdsl_status;
+	HAL_StatusTypeDef status = LSM6DSL_Read_Status(&ls6mdsl_status);
+
+	return status == HAL_OK && ls6mdsl_status & (0x01 << 2);
+}
+
+HAL_StatusTypeDef LSM6DSL_Read_Temperature(float *temperature)
+{
+	// Mapping: [0:255] = [0 C°:1 C°]
+	// 0 -> 25C°
+
+	HAL_StatusTypeDef status;
+	uint16_t value;
+
+	if ((status = LSM6DSL_Read_Registers_2(
+			LSM6DSL_REG_OUT_TEMP_H, LSM6DSL_REG_OUT_TEMP_L,
+			&value)) != HAL_OK) {
+		return status;
+	}
+
+	*temperature = 25.0f + ((int16_t) value / 256.0f);
+
+	return status;
+
+}
+

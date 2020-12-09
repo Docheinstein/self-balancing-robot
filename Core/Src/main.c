@@ -308,6 +308,17 @@ void toggleLed1()
     HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 }
 
+void readLSM6DSL() {
+//	while (!LSM6DSL_Is_Temperature_Data_Ready()) {
+//		println("Waiting for temperature data...");
+//		osDelay(100);
+//	}
+
+	float t;
+	LSM6DSL_Read_Temperature(&t);
+
+	println("Temperature = %f", t);
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -331,6 +342,8 @@ void StartDefaultTask(void const * argument)
 		println("[%d] Running...", iter);
 
 		toggleLed1();
+		readLSM6DSL();
+
 		osDelay(1000);
 
 		iter++;
