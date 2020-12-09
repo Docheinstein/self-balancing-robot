@@ -24,6 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "serial.h"
+#include "lsm6dsl.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,8 +48,11 @@ I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
-/* USER CODE BEGIN PV */
 
+/* USER CODE BEGIN PV */
+// Aliases for extern declarations
+I2C_HandleTypeDef *i2c = &hi2c2;
+UART_HandleTypeDef *huart = &huart1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -320,13 +324,14 @@ void StartDefaultTask(void const * argument)
 
 //	println("TEST - Integer = %d", 10);
 //	println("TEST - Float = %f", 3.1415);
+	LSM6DSL_Assert_Healthy();
 
 	int iter = 0;
 	while (1) {
 		println("[%d] Running...", iter);
 
 		toggleLed1();
-		osDelay(500);
+		osDelay(1000);
 
 		iter++;
 	}
