@@ -308,11 +308,18 @@ void toggleLed1()
     HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 }
 
+void setupLSM6DSL() {
+	LSM6DSL_Assert_Healthy();
+
+	LSM6DSL_Enable_Accelerometer(LSM6DLS_HIGH_PERF_MODE);
+	LSM6DSL_Enable_Gyroscope(LSM6DLS_HIGH_PERF_MODE);
+}
+
 void readLSM6DSL() {
-//	while (!LSM6DSL_Is_Temperature_Data_Ready()) {
-//		println("Waiting for temperature data...");
-//		osDelay(100);
-//	}
+	while (!LSM6DSL_Is_Temperature_Data_Ready()) {
+		println("Waiting for temperature data...");
+		osDelay(100);
+	}
 
 	float t;
 	LSM6DSL_Read_Temperature(&t);
@@ -335,7 +342,7 @@ void StartDefaultTask(void const * argument)
 
 //	println("TEST - Integer = %d", 10);
 //	println("TEST - Float = %f", 3.1415);
-	LSM6DSL_Assert_Healthy();
+	setupLSM6DSL();
 
 	int iter = 0;
 	while (1) {

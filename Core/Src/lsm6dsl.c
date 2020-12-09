@@ -5,7 +5,7 @@
 
 #if LSM6DSL_DEBUG
 #include "serial.h"
-#define debug(message, ...) println("[LSM6DSL] " message, ##__VA_ARGS__)
+#define debug(message, ...) println("{LSM6DSL} " message, ##__VA_ARGS__)
 #else
 #define debug(message, ...)
 #endif
@@ -80,18 +80,60 @@ void LSM6DSL_Assert_Healthy()
 	}
 }
 
+HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(LSM6DSL_Frequency frequency)
+{
+	debug("Enabling accelerometer");
+	uint8_t value = frequency | 0; // TODO (FS_XL1 FS_XL0)
+	return LSM6DSL_Write_Register(LSM6DSL_REG_CTRL1_XL, value);
+}
+
+HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(LSM6DSL_Frequency frequency)
+{
+	debug("Enabling gyroscope");
+	uint8_t value = frequency | 0; // TODO (FS_G1 FS_G0)
+	return LSM6DSL_Write_Register(LSM6DSL_REG_CTRL2_G, value);
+}
+
+HAL_StatusTypeDef LSM6DSL_Disable_Accelerometer()
+{
+	debug("Disabling accelerometer");
+	return LSM6DSL_Write_Register(LSM6DSL_REG_CTRL1_XL, LSM6DSL_POWER_DOWN);
+}
+
+HAL_StatusTypeDef LSM6DSL_Disable_Gyroscope()
+{
+	debug("Disabling gyroscope");
+	return LSM6DSL_Write_Register(LSM6DSL_REG_CTRL2_G, LSM6DSL_POWER_DOWN);
+}
+
 HAL_StatusTypeDef LSM6DSL_Read_Status(uint8_t *value)
 {
 	debug("Reading status...");
 	return LSM6DSL_Read_Register(LSM6DSL_REG_STATUS, value);
 }
 
+bool LSM6DSL_Is_Accelerometer_Data_Ready()
+{
+	uint8_t status;
+	HAL_StatusTypeDef ok = LSM6DSL_Read_Status(&status);
+
+	return ok == HAL_OK && status & LSM6DSL_REG_STATUS_BIT_XLDA;
+}
+
+bool LSM6DSL_Is_Gyroscope_Data_Ready()
+{
+	uint8_t status;
+	HAL_StatusTypeDef ok = LSM6DSL_Read_Status(&status);
+
+	return ok == HAL_OK && status & LSM6DSL_REG_STATUS_BIT_GDA;
+}
+
 bool LSM6DSL_Is_Temperature_Data_Ready()
 {
-	uint8_t ls6mdsl_status;
-	HAL_StatusTypeDef status = LSM6DSL_Read_Status(&ls6mdsl_status);
+	uint8_t status;
+	HAL_StatusTypeDef ok = LSM6DSL_Read_Status(&status);
 
-	return status == HAL_OK && ls6mdsl_status & (0x01 << 2);
+	return ok == HAL_OK && status & LSM6DSL_REG_STATUS_BIT_TDA;
 }
 
 HAL_StatusTypeDef LSM6DSL_Read_Temperature(float *temperature)
@@ -111,6 +153,5 @@ HAL_StatusTypeDef LSM6DSL_Read_Temperature(float *temperature)
 	*temperature = 25.0f + ((int16_t) value / 256.0f);
 
 	return status;
-
 }
 
