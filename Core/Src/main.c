@@ -380,9 +380,9 @@ void StartDefaultTask(void const * argument)
 		println("[%d] Running...", iter);
 
 //		toggleLed1();
-//		readLSM6DSL();
+		readLSM6DSL();
 
-		osDelay(100);
+//		osDelay(100);
 
 		iter++;
 	}
