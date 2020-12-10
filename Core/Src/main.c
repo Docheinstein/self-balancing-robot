@@ -311,20 +311,49 @@ void toggleLed1()
 void setupLSM6DSL() {
 	LSM6DSL_Assert_Healthy();
 
-	LSM6DSL_Enable_Accelerometer(LSM6DLS_HIGH_PERF_MODE);
-	LSM6DSL_Enable_Gyroscope(LSM6DLS_HIGH_PERF_MODE);
+	LSM6DSL_Enable_Accelerometer(LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G);
+	LSM6DSL_Enable_Gyroscope(LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS);
 }
 
 void readLSM6DSL() {
+#if 0
 	while (!LSM6DSL_Is_Temperature_Data_Ready()) {
 		println("Waiting for temperature data...");
 		osDelay(100);
 	}
 
 	float t;
-	LSM6DSL_Read_Temperature(&t);
+	if (LSM6DSL_Read_Temperature_C(&t) != HAL_OK)
+		return;
 
 	println("Temperature = %f", t);
+#endif
+
+#if 1
+	while (!LSM6DSL_Is_Accelerometer_Data_Ready()) {
+		println("Waiting for accelerometer data...");
+		osDelay(10);
+	}
+
+	float xl_x, xl_y, xl_z;
+	if (LSM6DSL_Read_Accelerometer_g(&xl_x, &xl_y, &xl_z) != HAL_OK)
+		return;
+
+	println("Accelerometer: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
+#endif
+
+#if 1
+	while (!LSM6DSL_Is_Gyroscope_Data_Ready()) {
+		println("Waiting for gyroscope data...");
+		osDelay(10);
+	}
+
+	float g_x, g_y, g_z;
+	if (LSM6DSL_Read_Gyroscope_dps(&g_x, &g_y, &g_z) != HAL_OK)
+		return;
+
+	println("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
+#endif
 }
 /* USER CODE END 4 */
 
@@ -345,16 +374,18 @@ void StartDefaultTask(void const * argument)
 	setupLSM6DSL();
 
 	int iter = 0;
-	while (1) {
-		println("[%d] Running...", iter);
+	while (iter < 100) {
+//		println("[%d] Running...", iter);
 
-		toggleLed1();
+//		toggleLed1();
 		readLSM6DSL();
 
-		osDelay(1000);
+//		osDelay(1000);
 
 		iter++;
 	}
+
+	println("==== FINISHED =====");
 
   /* USER CODE END 5 */
 }
@@ -410,6 +441,7 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+    println("assert_failed - %s:%d", file, line);
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

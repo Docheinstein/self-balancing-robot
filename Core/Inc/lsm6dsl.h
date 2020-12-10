@@ -17,9 +17,23 @@ typedef enum {
 	LSM6DSL_6666_HZ  	= 0xA0,
 } LSM6DSL_Frequency;
 
-#define LSM6DLS_LOW_POWER_MODE 	LSM6DSL_12_HZ
-#define LSM6DLS_NORMAL_MODE 	LSM6DSL_104_HZ
-#define LSM6DLS_HIGH_PERF_MODE 	LSM6DSL_416_HZ
+typedef enum {
+	LSM6DSL_FS_XL_2_G 	= 0x00,
+	LSM6DSL_FS_XL_16_G 	= 0x04,
+	LSM6DSL_FS_XL_4_G 	= 0x08,
+	LSM6DSL_FS_XL_8_G 	= 0x0C
+} LSM6DSL_Accelerometer_Scale;
+
+typedef enum {
+	LSM6DSL_FS_G_250_DPS 	= 0x00,
+	LSM6DSL_FS_G_500_DPS 	= 0x04,
+	LSM6DSL_FS_G_1000_DPS 	= 0x08,
+	LSM6DSL_FS_G_2000_DPS 	= 0x0C
+} LSM6DSL_Gyroscope_Scale;
+
+#define LSM6DSL_LOW_POWER_MODE 	LSM6DSL_12_HZ
+#define LSM6DSL_NORMAL_MODE 	LSM6DSL_104_HZ
+#define LSM6DSL_HIGH_PERF_MODE 	LSM6DSL_416_HZ
 
 // ============== I2C ==================
 
@@ -82,6 +96,8 @@ typedef enum {
 #define LSM6DSL_REG_STATUS_BIT_GDA 		(0x1 << 1)
 #define LSM6DSL_REG_STATUS_BIT_TDA 		(0x1 << 2)
 
+#define LSM6DSL_REG_CTRL3_C_BIT_BDU		(0x1 << 6)
+
 // =========== FUNCTIONS ===============
 
 HAL_StatusTypeDef LSM6DSL_Read_Register(uint8_t reg, uint8_t *out);
@@ -90,8 +106,14 @@ HAL_StatusTypeDef LSM6DSL_Write_Register(uint8_t reg, uint8_t value);
 
 void LSM6DSL_Assert_Healthy();
 
-HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(LSM6DSL_Frequency frequency);
-HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(LSM6DSL_Frequency frequency);
+HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(
+	LSM6DSL_Frequency frequency,
+	LSM6DSL_Accelerometer_Scale scale
+);
+HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(
+	LSM6DSL_Frequency frequency,
+	LSM6DSL_Gyroscope_Scale scale
+);
 
 HAL_StatusTypeDef LSM6DSL_Disable_Accelerometer();
 HAL_StatusTypeDef LSM6DSL_Disable_Gyroscope();
@@ -102,8 +124,10 @@ bool LSM6DSL_Is_Accelerometer_Data_Ready();
 bool LSM6DSL_Is_Gyroscope_Data_Ready();
 bool LSM6DSL_Is_Temperature_Data_Ready();
 
-HAL_StatusTypeDef LSM6DSL_Read_Accelerometer(int *x, int *y, int *z); // g
-HAL_StatusTypeDef LSM6DSL_Read_Gyroscope(int *x, int *y, int *z);
-HAL_StatusTypeDef LSM6DSL_Read_Temperature(float *temperature); // C°
+HAL_StatusTypeDef LSM6DSL_Read_Accelerometer(int16_t *x, int16_t *y, int16_t *z);
+HAL_StatusTypeDef LSM6DSL_Read_Accelerometer_g(float *x, float *y, float *z); // g
+HAL_StatusTypeDef LSM6DSL_Read_Gyroscope(int16_t *x, int16_t *y, int16_t *z);
+HAL_StatusTypeDef LSM6DSL_Read_Gyroscope_dps(float *x, float *y, float *z); // dps: degrees per second
+HAL_StatusTypeDef LSM6DSL_Read_Temperature_C(float *temperature); // C°
 
 #endif /* LSM6DSL_H */
