@@ -311,8 +311,10 @@ void toggleLed1()
 void setupLSM6DSL() {
 	LSM6DSL_Assert_Healthy();
 
-	LSM6DSL_Enable_Accelerometer(LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G);
-	LSM6DSL_Enable_Gyroscope(LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS);
+	LSM6DSL_Enable_Accelerometer(
+		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G, LSM6DSL_INT_1);
+	LSM6DSL_Enable_Gyroscope(
+		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS, LSM6DSL_INT_2);
 }
 
 void readLSM6DSL() {
@@ -375,12 +377,12 @@ void StartDefaultTask(void const * argument)
 
 	int iter = 0;
 	while (iter < 100) {
-//		println("[%d] Running...", iter);
+		println("[%d] Running...", iter);
 
 //		toggleLed1();
-		readLSM6DSL();
+//		readLSM6DSL();
 
-//		osDelay(1000);
+		osDelay(100);
 
 		iter++;
 	}

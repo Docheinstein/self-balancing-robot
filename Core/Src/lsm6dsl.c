@@ -127,7 +127,8 @@ void LSM6DSL_Assert_Healthy()
 
 HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(
 		LSM6DSL_Frequency frequency,
-		LSM6DSL_Accelerometer_Scale scale)
+		LSM6DSL_Accelerometer_Scale scale,
+		LSM6DSL_Interrupt interrupt)
 {
 	HAL_StatusTypeDef status;
 	debug("Enabling accelerometer");
@@ -145,12 +146,28 @@ HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(
 		LSM6DSL_Write_Register(LSM6DSL_REG_CTRL1_XL, value)
 	)
 
+	if (interrupt == LSM6DSL_INT_1) {
+		debug("Using INTERRUPT 1 for accelerometer");
+		HAL_CHECK(
+				LSM6DSL_Write_Register(
+			LSM6DSL_REG_INT1_CTRL, LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_XL)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debug("Using INTERRUPT 2 for accelerometer");
+		HAL_CHECK(
+				LSM6DSL_Write_Register(
+			LSM6DSL_REG_INT2_CTRL, LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_XL)
+		)
+	}
+
 	return status;
 }
 
 HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(
 		LSM6DSL_Frequency frequency,
-		LSM6DSL_Gyroscope_Scale scale)
+		LSM6DSL_Gyroscope_Scale scale,
+		LSM6DSL_Interrupt interrupt)
 {
 	HAL_StatusTypeDef status;
 	debug("Enabling gyroscope");
@@ -166,6 +183,21 @@ HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(
 	HAL_CHECK(
 		LSM6DSL_Write_Register(LSM6DSL_REG_CTRL2_G, value)
 	)
+
+	if (interrupt == LSM6DSL_INT_1) {
+		debug("Using INTERRUPT 1 for gyroscope");
+		HAL_CHECK(
+				LSM6DSL_Write_Register(
+			LSM6DSL_REG_INT1_CTRL, LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_G)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debug("Using INTERRUPT 2 for gyroscope");
+		HAL_CHECK(
+				LSM6DSL_Write_Register(
+			LSM6DSL_REG_INT2_CTRL, LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_G)
+		)
+	}
 
 	return status;
 }

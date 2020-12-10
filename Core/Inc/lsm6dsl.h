@@ -31,6 +31,12 @@ typedef enum {
 	LSM6DSL_FS_G_2000_DPS 	= 0x0C
 } LSM6DSL_Gyroscope_Scale;
 
+typedef enum {
+	LSM6DSL_INT_NONE,
+	LSM6DSL_INT_1,
+	LSM6DSL_INT_2
+} LSM6DSL_Interrupt;
+
 #define LSM6DSL_LOW_POWER_MODE 	LSM6DSL_12_HZ
 #define LSM6DSL_NORMAL_MODE 	LSM6DSL_104_HZ
 #define LSM6DSL_HIGH_PERF_MODE 	LSM6DSL_416_HZ
@@ -98,6 +104,12 @@ typedef enum {
 
 #define LSM6DSL_REG_CTRL3_C_BIT_BDU		(0x1 << 6)
 
+#define LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_XL 	(0x1 << 0)
+#define LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_G 	(0x1 << 1)
+
+#define LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_XL 	(0x1 << 0)
+#define LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_G 	(0x1 << 1)
+
 // =========== FUNCTIONS ===============
 
 HAL_StatusTypeDef LSM6DSL_Read_Register(uint8_t reg, uint8_t *out);
@@ -108,11 +120,13 @@ void LSM6DSL_Assert_Healthy();
 
 HAL_StatusTypeDef LSM6DSL_Enable_Accelerometer(
 	LSM6DSL_Frequency frequency,
-	LSM6DSL_Accelerometer_Scale scale
+	LSM6DSL_Accelerometer_Scale scale,
+	LSM6DSL_Interrupt interrupt
 );
 HAL_StatusTypeDef LSM6DSL_Enable_Gyroscope(
 	LSM6DSL_Frequency frequency,
-	LSM6DSL_Gyroscope_Scale scale
+	LSM6DSL_Gyroscope_Scale scale,
+	LSM6DSL_Interrupt interrupt
 );
 
 HAL_StatusTypeDef LSM6DSL_Disable_Accelerometer();
