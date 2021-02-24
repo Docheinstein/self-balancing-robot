@@ -48,7 +48,6 @@ I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
-
 /* USER CODE BEGIN PV */
 // Aliases for extern declarations
 I2C_HandleTypeDef *i2c = &hi2c2;
@@ -123,7 +122,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, TASK_STACK_SIZE);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
@@ -286,11 +285,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA5 */
   GPIO_InitStruct.Pin = GPIO_PIN_5;
@@ -298,6 +304,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 
@@ -331,7 +341,7 @@ void readLSM6DSL() {
 	println("Temperature = %f", t);
 #endif
 
-#if 1
+#if 0
 	while (!LSM6DSL_Is_Accelerometer_Data_Ready()) {
 		println("Waiting for accelerometer data...");
 		osDelay(10);
@@ -357,6 +367,16 @@ void readLSM6DSL() {
 	println("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
 #endif
 }
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if(GPIO_Pin == GPIO_PIN_13){
+		setupLSM6DSL();
+		readLSM6DSL();
+	}
+	else {
+		__NOP();
+	}
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -369,30 +389,14 @@ void readLSM6DSL() {
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
-	println("==== STARTED =====");
-
-//	println("TEST - Integer = %d", 10);
-//	println("TEST - Float = %f", 3.1415);
-	setupLSM6DSL();
-
-	int iter = 0;
-	while (iter < 100) {
-		println("[%d] Running...", iter);
-
-//		toggleLed1();
-		readLSM6DSL();
-
-//		osDelay(100);
-
-		iter++;
-	}
-
-	println("==== FINISHED =====");
-
+	//println("===== STARTING ===== \n");
+	for(;;){
+		osDelay(1);
+	 }
   /* USER CODE END 5 */
 }
 
-/**
+ /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM6 interrupt took place, inside
   * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
