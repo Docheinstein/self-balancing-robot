@@ -1,22 +1,9 @@
 // =========== FUNCTIONS ===============
 
-void rotateCounterClockwise(){
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-}
+void rotateCounterClockwise();
 
-void rotateClockwise(){
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-}
+void rotateClockwise();
 
-void invertRotation(){
-	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_0);
-	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_1);
-}
+void invertRotation();
 
-void stopRotation(){
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-}
-
+void stopRotation();
