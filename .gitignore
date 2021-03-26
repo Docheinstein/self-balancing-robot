@@ -1,2 +1,5 @@
 /Debug/
 self-balancing-robot Debug.launch
+.cproject
+.mxproject
+.settings/language.settings.xml
