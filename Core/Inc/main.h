@@ -50,6 +50,8 @@ extern "C" {
 
 /* USER CODE END EM */
 
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
+
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -61,12 +63,20 @@ void Error_Handler(void);
 #define Blue_Button_Pin GPIO_PIN_13
 #define Blue_Button_GPIO_Port GPIOC
 #define Blue_Button_EXTI_IRQn EXTI15_10_IRQn
-#define Motor_A_1_Pin GPIO_PIN_0
-#define Motor_A_1_GPIO_Port GPIOC
-#define Motor_A_2_Pin GPIO_PIN_1
-#define Motor_A_2_GPIO_Port GPIOC
+#define Motor_B_Direction_2_Pin GPIO_PIN_0
+#define Motor_B_Direction_2_GPIO_Port GPIOA
+#define Motor_A_Direction_1_Pin GPIO_PIN_3
+#define Motor_A_Direction_1_GPIO_Port GPIOA
 #define LED_1_Pin GPIO_PIN_5
 #define LED_1_GPIO_Port GPIOA
+#define Motor_B_Direction_1_Pin GPIO_PIN_0
+#define Motor_B_Direction_1_GPIO_Port GPIOB
+#define Motor_A_Speed_PWM_Pin GPIO_PIN_1
+#define Motor_A_Speed_PWM_GPIO_Port GPIOB
+#define Motor_A_Direction_2_Pin GPIO_PIN_14
+#define Motor_A_Direction_2_GPIO_Port GPIOD
+#define Motor_B_Speed_PWM_Pin GPIO_PIN_4
+#define Motor_B_Speed_PWM_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

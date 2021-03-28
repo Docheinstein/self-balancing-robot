@@ -1,6 +1,4 @@
 1. Capire FreeRTOS (task, ...)
-2. Far funzionare Blue Button e collegarci una esecuzione di funzione (interrupt handler?)
-3. Introdurre controllo dei motori nel codice
-4. Controllare i motori in PWM
-5. Capire come scrivere gli interrupt handler per giroscopio ed accellerometro
-6. Progetto hardware del robot
+2. Capire come scrivere gli interrupt handler per giroscopio ed accellerometro
+3. Altri LED
+4. LED blink/intensity dipendente dalla posizione data dal giroscopio?

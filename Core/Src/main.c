@@ -25,7 +25,7 @@
 /* USER CODE BEGIN Includes */
 #include "serial.h"
 #include "lsm6dsl.h"
-#include "motors.h"
+#include "l298n.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,12 +45,12 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c2;
 
+TIM_HandleTypeDef htim3;
+
 UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
 /* USER CODE BEGIN PV */
-I2C_HandleTypeDef *i2c = &hi2c2;
-UART_HandleTypeDef *huart = &huart1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,6 +58,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_TIM3_Init(void);
 void StartDefaultTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -99,8 +100,51 @@ int main(void)
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_I2C2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
+  Serial_Init(&huart1);
+  LSM6DSL_Init(&hi2c2);
 
+  L298N_Config l298n_config = {
+	  .motor_a = {
+		  .enabled = true,
+		  .direction_1 = {
+			  .port = Motor_A_Direction_1_GPIO_Port,
+			  .pin = Motor_A_Direction_1_Pin
+		  },
+		  .direction_2 = {
+			  .port = Motor_A_Direction_2_GPIO_Port,
+			  .pin = Motor_A_Direction_2_Pin
+		  },
+		  .speed_type = L298N_MOTOR_SPEED_TYPE_ANALOG,
+		  .speed = {
+			  .analog = {
+				 .tim = &htim3,
+				 .channel = TIM_CHANNEL_4,
+			  }
+		  }
+	  },
+	  .motor_b = {
+		  .enabled = true,
+		  .direction_1 = {
+			  .port = Motor_B_Direction_1_GPIO_Port,
+			  .pin = Motor_B_Direction_1_Pin
+		  },
+		  .direction_2 = {
+			  .port = Motor_B_Direction_2_GPIO_Port,
+			  .pin = Motor_B_Direction_2_Pin
+		  },
+		  .speed_type = L298N_MOTOR_SPEED_TYPE_ANALOG,
+		  .speed = {
+			  .analog = {
+				 .tim = &htim3,
+				 .channel = TIM_CHANNEL_1,
+			  }
+		  }
+	  },
+  };
+
+  L298N_Init(l298n_config);
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -246,6 +290,69 @@ static void MX_I2C2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 15;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 50000;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+//  HAL_TIM_Base_MspInit(&htim3);
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
   * @brief USART1 Initialization Function
   * @param None
   * @retval None
@@ -293,12 +400,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, Motor_A_1_Pin|Motor_A_2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, Motor_B_Direction_2_Pin|Motor_A_Direction_1_Pin|LED_1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(Motor_B_Direction_1_GPIO_Port, Motor_B_Direction_1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(Motor_A_Direction_2_GPIO_Port, Motor_A_Direction_2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : Blue_Button_Pin */
   GPIO_InitStruct.Pin = Blue_Button_Pin;
@@ -306,19 +417,26 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Blue_Button_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Motor_A_1_Pin Motor_A_2_Pin */
-  GPIO_InitStruct.Pin = Motor_A_1_Pin|Motor_A_2_Pin;
+  /*Configure GPIO pins : Motor_B_Direction_2_Pin Motor_A_Direction_1_Pin LED_1_Pin */
+  GPIO_InitStruct.Pin = Motor_B_Direction_2_Pin|Motor_A_Direction_1_Pin|LED_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LED_1_Pin */
-  GPIO_InitStruct.Pin = LED_1_Pin;
+  /*Configure GPIO pin : Motor_B_Direction_1_Pin */
+  GPIO_InitStruct.Pin = Motor_B_Direction_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LED_1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(Motor_B_Direction_1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : Motor_A_Direction_2_Pin */
+  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(Motor_A_Direction_2_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
@@ -328,18 +446,14 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-static void toggleLed1()
-{
-    HAL_GPIO_TogglePin(GPIOA, LED_1_Pin);
-}
 
 static void setupLSM6DSL() {
-	LSM6DSL_Assert_Healthy();
+	LSM6DSL_AssertHealthy();
 	println("LSM6DSL_Assert_Healthy OK");
-	LSM6DSL_Enable_Accelerometer(
+	LSM6DSL_EnableAccelerometer(
 		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G, LSM6DSL_INT_1);
 	println("LSM6DSL_Enable_Accelerometer OK");
-	LSM6DSL_Enable_Gyroscope(
+	LSM6DSL_EnableGyroscope(
 		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS, LSM6DSL_INT_2);
 	println("LSM6DSL_Enable_Gyroscope OK");
 }
@@ -347,39 +461,39 @@ static void setupLSM6DSL() {
 
 static void readLSM6DSL() {
 #if 0
-	while (!LSM6DSL_Is_Temperature_Data_Ready()) {
+	while (!LSM6DSL_IsTemperatureDataReady()) {
 		println("Waiting for temperature data...");
 		osDelay(100);
 	}
 
 	float t;
-	if (LSM6DSL_Read_Temperature_C(&t) != HAL_OK)
+	if (LSM6DSL_ReadTemperature_C(&t) != HAL_OK)
 		return;
 
 	println("Temperature = %f", t);
 #endif
 
 #if 0
-	while (!LSM6DSL_Is_Accelerometer_Data_Ready()) {
+	while (!LSM6DSL_IsAccelerometerDataReady()) {
 		println("Waiting for accelerometer data...");
 		osDelay(10);
 	}
 
 	float xl_x, xl_y, xl_z;
-	if (LSM6DSL_Read_Accelerometer_g(&xl_x, &xl_y, &xl_z) != HAL_OK)
+	if (LSM6DSL_ReadAccelerometer_g(&xl_x, &xl_y, &xl_z) != HAL_OK)
 		return;
 
 	println("Accelerometer: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
 #endif
 
 #if 1
-	while (!LSM6DSL_Is_Gyroscope_Data_Ready()) {
+	while (!LSM6DSL_IsGyroscopeDataReady()) {
 		println("Waiting for gyroscope data...");
 		osDelay(10);
 	}
 
 	float g_x, g_y, g_z;
-	if (LSM6DSL_Read_Gyroscope_dps(&g_x, &g_y, &g_z) != HAL_OK)
+	if (LSM6DSL_ReadGyroscope_dps(&g_x, &g_y, &g_z) != HAL_OK)
 		return;
 
 	println("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
@@ -401,21 +515,36 @@ static void demoLSM6DSL()
 	}
 }
 
-static void demoMotors()
+static void demoL298N()
 {
-	rotateCounterClockwise();
-
-	while(1) {
+	while (1) {
 
 	}
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	static int mode = 0;
+	static uint8_t duty_cycle = 0;
+
 	if (GPIO_Pin == Blue_Button_Pin) {
 		println("Button has been pressed");
-		toggleLed1();
-		stopRotation();
+
+		mode = (mode + 1) % 3;
+		println("Mode: %d", mode);
+
+		if (mode == 0) {
+			L298N_Stop();
+		}
+		else if (mode == 1) {
+			duty_cycle = (duty_cycle + 10) % 100;
+			L298N_Forward(duty_cycle);
+		}
+		else if (mode == 2) {
+			L298N_Backward(duty_cycle);
+		}
+
+//		toggleLed1();
 	}
 }
 
@@ -431,10 +560,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
-	println("=== STARTED ===");
 
 //	demoLSM6DSL();
-	demoMotors();
+	println("=== STARTED ===");
+
+	demoL298N();
 
 	println("==== FINISHED =====");
   /* USER CODE END 5 */
@@ -469,10 +599,12 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+
+	println("ERROR");
+	while (1) {
+
+	}
+
   /* USER CODE END Error_Handler_Debug */
 }
 
