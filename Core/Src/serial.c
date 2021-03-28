@@ -1,7 +1,11 @@
 #include "serial.h"
-#include "stm32l4xx_hal.h"
 
-extern UART_HandleTypeDef *huart;
+static UART_HandleTypeDef *huart;
+
+void Serial_Init(UART_HandleTypeDef *h) {
+	huart = h;
+}
+
 
 // overriding _putchar of so that printf (of custom printf.h)
 // will print to the serial port (UART)
