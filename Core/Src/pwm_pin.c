@@ -1,41 +1,35 @@
 #include "pwm_pin.h"
 #include "printf.h"
+#include "debug.h"
 
-#define PWM_PIN_DEBUG 1
-
-#if PWM_PIN_DEBUG
-#include "serial.h"
-#define debug(message, ...) println("{PWM_PIN} " message, ##__VA_ARGS__)
-#else
-#define debug(message, ...)
-#endif
+#define DEBUG_FMT(fmt) "{PWM_Pin} " fmt
 
 void PWM_Pin_Start(PWM_Pin pin)
 {
-#if PWM_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debug("Start     (%s)", s_pin);
+	debugln("Start     (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Start(pin.tim, pin.channel);
 }
 
 void PWM_Pin_Stop(PWM_Pin pin)
 {
-#if PWM_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debug("Stop      (%s)", s_pin);
+	debugln("Stop      (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Stop(pin.tim, pin.channel);
 }
 
 void PWM_Pin_SetDutyCycle(PWM_Pin pin, uint8_t percentage)
 {
-#if PWM_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debug("DutyCycle (%s) := %u%%", s_pin, percentage);
+	debugln("DutyCycle (%s) := %u%%", s_pin, percentage);
 #endif
 	__HAL_TIM_SET_COMPARE(
 			pin.tim, pin.channel,
@@ -68,7 +62,7 @@ static const char * PWM_Pin_TIMToString(TIM_HandleTypeDef *tim)
 		return "TIM16";
 	if (tim->Instance == TIM17)
 		return "TIM17";
-	return NULL;
+	return "?";
 }
 
 static const char * PWM_Pin_ChannelToString(uint32_t channel)
@@ -85,21 +79,12 @@ static const char * PWM_Pin_ChannelToString(uint32_t channel)
 		return "CH5";
 	if (channel == TIM_CHANNEL_6)
 		return "CH6";
-	return NULL;
+	return "?";
 }
 
 void PWM_Pin_ToString(PWM_Pin pin, char *buf, size_t buflen)
 {
 	const char *s_tim = PWM_Pin_TIMToString(pin.tim);
-	if (!s_tim) {
-		snprintf(buf, buflen, "?");
-		return;
-	}
 	const char *s_ch = PWM_Pin_ChannelToString(pin.channel);
-	if (!s_ch) {
-		snprintf(buf, buflen, "?");
-		return;
-	}
-
 	snprintf(buf, buflen, "%s%s", s_tim, s_ch);
 }

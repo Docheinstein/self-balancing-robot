@@ -181,8 +181,8 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
 
     __HAL_RCC_GPIOB_CLK_ENABLE();
     /**TIM3 GPIO Configuration
+    PB0     ------> TIM3_CH3
     PB1     ------> TIM3_CH4
-    PB4 (NJTRST)     ------> TIM3_CH1
     */
     GPIO_InitStruct.Pin = Motor_A_Speed_PWM_Pin|Motor_B_Speed_PWM_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;

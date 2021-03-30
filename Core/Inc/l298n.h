@@ -13,6 +13,7 @@ typedef enum {
 
 typedef struct L298N_MotorConfig {
 	bool enabled;
+	bool inverted;
 	GPIO_Pin direction_1;
 	GPIO_Pin direction_2;
 	L298N_MotorSpeedType speed_type;

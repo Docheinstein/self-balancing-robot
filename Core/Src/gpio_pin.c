@@ -1,46 +1,36 @@
 #include "gpio_pin.h"
 #include "stm32l4xx.h"
 #include "printf.h"
+#include "debug.h"
 
-#define GPIO_PIN_DEBUG 1
-
-#if GPIO_PIN_DEBUG
-#include "serial.h"
-#define debug(message, ...) println("{GPIO_PIN} " message, ##__VA_ARGS__)
-#else
-#define debug(message, ...)
-#endif
-
-
-// TODO: HAL_GPIO_WritePin supports multiple pins in a single write, supporting it here too?
-
+#define DEBUG_FMT(fmt) "{GPIO_Pin} " fmt
 
 void GPIO_Pin_Toggle(GPIO_Pin pin)
 {
-#if GPIO_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debug("Toggle (%s)", s_pin);
+	debugln("Toggle (%s)", s_pin);
 #endif
 	HAL_GPIO_TogglePin(pin.port, pin.pin);
 }
 
 void GPIO_Pin_High(GPIO_Pin pin)
 {
-#if GPIO_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debug("High   (%s)", s_pin);
+	debugln("High   (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_SET);
 }
 
 void GPIO_Pin_Low(GPIO_Pin pin)
 {
-#if GPIO_PIN_DEBUG
+#if DEBUG
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debug("Low    (%s)", s_pin);
+	debugln("Low    (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_RESET);
 }
@@ -61,7 +51,7 @@ static const char * GPIO_Pin_PortToString(GPIO_TypeDef *port)
 		return "F";
 	if (port == GPIOH)
 		return "H";
-	return NULL;
+	return "?";
 }
 
 static const char * GPIO_Pin_PinToString(uint16_t pin)
@@ -99,23 +89,14 @@ static const char * GPIO_Pin_PinToString(uint16_t pin)
 		return "14";
 	if (pin == GPIO_PIN_15)
 		return "15";
-	return NULL;
+	return "?";
 }
 
 
 void GPIO_Pin_ToString(GPIO_Pin pin, char *buf, size_t buflen)
 {
 	const char *s_port = GPIO_Pin_PortToString(pin.port);
-	if (!s_port) {
-		snprintf(buf, buflen, "?");
-		return;
-	}
 	const char *s_pin = GPIO_Pin_PinToString(pin.pin);
-	if (!s_pin) {
-		snprintf(buf, buflen, "?");
-		return;
-	}
-
 	snprintf(buf, buflen, "P%s%s", s_port, s_pin);
 }
 

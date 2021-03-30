@@ -24,8 +24,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "serial.h"
+#include "debug.h"
 #include "lsm6dsl.h"
 #include "l298n.h"
+#include "gpio_pin.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +37,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define DEBUG_FMT(fmt) "{MAIN} " fmt
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -103,6 +106,10 @@ int main(void)
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   Serial_Init(&huart1);
+
+  debugln("=============================");
+  debugln("Peripherals initialization...");
+
   LSM6DSL_Init(&hi2c2);
 
   L298N_Config l298n_config = {
@@ -120,12 +127,13 @@ int main(void)
 		  .speed = {
 			  .analog = {
 				 .tim = &htim3,
-				 .channel = TIM_CHANNEL_4,
+				 .channel = TIM_CHANNEL_3,
 			  }
 		  }
 	  },
 	  .motor_b = {
 		  .enabled = true,
+		  .inverted = true,
 		  .direction_1 = {
 			  .port = Motor_B_Direction_1_GPIO_Port,
 			  .pin = Motor_B_Direction_1_Pin
@@ -138,13 +146,15 @@ int main(void)
 		  .speed = {
 			  .analog = {
 				 .tim = &htim3,
-				 .channel = TIM_CHANNEL_1,
+				 .channel = TIM_CHANNEL_4,
 			  }
 		  }
 	  },
   };
 
   L298N_Init(l298n_config);
+
+  debugln("Starting FreeRTOS kernel...");
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN RTOS_MUTEX */
@@ -337,7 +347,7 @@ static void MX_TIM3_Init(void)
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -403,26 +413,29 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, Motor_B_Direction_2_Pin|Motor_A_Direction_1_Pin|LED_1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|LED_1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(Motor_B_Direction_1_GPIO_Port, Motor_B_Direction_1_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Motor_A_Direction_2_GPIO_Port, Motor_A_Direction_2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : Blue_Button_Pin */
-  GPIO_InitStruct.Pin = Blue_Button_Pin;
+  /*Configure GPIO pin : Button_Blue_Pin */
+  GPIO_InitStruct.Pin = Button_Blue_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(Blue_Button_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(Button_Blue_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Motor_B_Direction_2_Pin Motor_A_Direction_1_Pin LED_1_Pin */
-  GPIO_InitStruct.Pin = Motor_B_Direction_2_Pin|Motor_A_Direction_1_Pin|LED_1_Pin;
+  /*Configure GPIO pins : Motor_A_Direction_2_Pin Motor_A_Direction_1_Pin Motor_B_Direction_2_Pin LED_1_Pin */
+  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|LED_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LSM6DSL_INT_1_Pin */
+  GPIO_InitStruct.Pin = LSM6DSL_INT_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(LSM6DSL_INT_1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Motor_B_Direction_1_Pin */
   GPIO_InitStruct.Pin = Motor_B_Direction_1_Pin;
@@ -430,13 +443,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(Motor_B_Direction_1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Motor_A_Direction_2_Pin */
-  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Motor_A_Direction_2_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
@@ -448,21 +454,22 @@ static void MX_GPIO_Init(void)
 
 
 static void setupLSM6DSL() {
-	LSM6DSL_AssertHealthy();
-	println("LSM6DSL_Assert_Healthy OK");
+	if (!LSM6DSL_IsHealthy())
+		return;
 	LSM6DSL_EnableAccelerometer(
-		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G, LSM6DSL_INT_1);
-	println("LSM6DSL_Enable_Accelerometer OK");
+		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G);
 	LSM6DSL_EnableGyroscope(
-		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS, LSM6DSL_INT_2);
-	println("LSM6DSL_Enable_Gyroscope OK");
+		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS);
+
+//	LSM6DSL_SetAccelerometerInterrupt(LSM6DSL_INT_1);
+	LSM6DSL_SetGyroscopeInterrupt(LSM6DSL_INT_1);
 }
 
 
 static void readLSM6DSL() {
 #if 0
 	while (!LSM6DSL_IsTemperatureDataReady()) {
-		println("Waiting for temperature data...");
+		debugln("Waiting for temperature data...");
 		osDelay(100);
 	}
 
@@ -470,12 +477,12 @@ static void readLSM6DSL() {
 	if (LSM6DSL_ReadTemperature_C(&t) != HAL_OK)
 		return;
 
-	println("Temperature = %f", t);
+	debugln("Temperature = %f", t);
 #endif
 
 #if 0
 	while (!LSM6DSL_IsAccelerometerDataReady()) {
-		println("Waiting for accelerometer data...");
+		debugln("Waiting for accelerometer data...");
 		osDelay(10);
 	}
 
@@ -483,12 +490,12 @@ static void readLSM6DSL() {
 	if (LSM6DSL_ReadAccelerometer_g(&xl_x, &xl_y, &xl_z) != HAL_OK)
 		return;
 
-	println("Accelerometer: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
+	debugln("Accelerometer: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
 #endif
 
 #if 1
 	while (!LSM6DSL_IsGyroscopeDataReady()) {
-		println("Waiting for gyroscope data...");
+		debugln("Waiting for gyroscope data...");
 		osDelay(10);
 	}
 
@@ -496,7 +503,7 @@ static void readLSM6DSL() {
 	if (LSM6DSL_ReadGyroscope_dps(&g_x, &g_y, &g_z) != HAL_OK)
 		return;
 
-	println("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
+	debugln("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
 #endif
 }
 
@@ -504,14 +511,18 @@ static void demoLSM6DSL()
 {
 	setupLSM6DSL();
 
-	int iter = 0;
-	while (iter < 100) {
-		println("[%d] Running...", iter);
+//	int iter = 0;
+//	while (iter < 100) {
+//		debugln("--- Iter %d ---", iter);
+//
+//		readLSM6DSL();
+//		osDelay(100);
+//
+//		iter++;
+//	}
 
-		readLSM6DSL();
-		osDelay(50);
+	while (1) {
 
-		iter++;
 	}
 }
 
@@ -522,27 +533,44 @@ static void demoL298N()
 	}
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
 	static int mode = 0;
 	static uint8_t duty_cycle = 0;
 
-	if (GPIO_Pin == Blue_Button_Pin) {
-		println("Button has been pressed");
+#if DEBUG
+	GPIO_Pin gpio_pin = {
+		.pin = pin
+	};
+	char s_gpio_pin[8];
+	GPIO_Pin_ToString(gpio_pin, s_gpio_pin, 8);
+	debugln("HAL_GPIO_EXTI_Callback on pin %s", s_gpio_pin);
+#endif // DEBUG
 
-		mode = (mode + 1) % 3;
-		println("Mode: %d", mode);
+	if (pin == Button_Blue_Pin) {
+		debugln("Button has been pressed");
+		static int counter = 0;
+		counter++;
 
-		if (mode == 0) {
-			L298N_Stop();
-		}
-		else if (mode == 1) {
-			duty_cycle = (duty_cycle + 10) % 100;
-			L298N_Forward(duty_cycle);
-		}
-		else if (mode == 2) {
-			L298N_Backward(duty_cycle);
-		}
+		float xl_x, xl_y, xl_z;
+		if (LSM6DSL_ReadGyroscope_dps(&xl_x, &xl_y, &xl_z) != HAL_OK)
+			return;
+
+		debugln("Gyroscope: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
+
+//		mode = (mode + 1) % 3;
+//		debugln("Mode: %d", mode);
+//
+//		if (mode == 0) {
+//			L298N_Stop();
+//		}
+//		else if (mode == 1) {
+//			duty_cycle = (duty_cycle + 10) % 100;
+//			L298N_Forward(duty_cycle);
+//		}
+//		else if (mode == 2) {
+//			L298N_Backward(duty_cycle);
+//		}
 
 //		toggleLed1();
 	}
@@ -561,12 +589,9 @@ void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
 
-//	demoLSM6DSL();
-	println("=== STARTED ===");
+	demoLSM6DSL();
+//	demoL298N();
 
-	demoL298N();
-
-	println("==== FINISHED =====");
   /* USER CODE END 5 */
 }
 
@@ -600,7 +625,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 
-	println("ERROR");
+	debugln("ERROR");
 	while (1) {
 
 	}

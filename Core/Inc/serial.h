@@ -5,6 +5,7 @@
 #include "printf.h"
 
 #define SERIAL_ENDL "\r\n"
+
 #define println(message, ...) printf(message SERIAL_ENDL, ##__VA_ARGS__)
 
 void Serial_Init(UART_HandleTypeDef *huart);

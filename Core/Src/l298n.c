@@ -1,21 +1,16 @@
 #include "l298n.h"
 #include "serial.h"
+#include "debug.h"
+#include "strings.h"
 
-#define L298N_DEBUG 1
-
-#if L298N_DEBUG
-#include "serial.h"
-#define debug(message, ...) println("{L298N} " message, ##__VA_ARGS__)
-#else
-#define debug(message, ...)
-#endif
+#define DEBUG_FMT(fmt) "{L298N} " fmt
 
 static L298N_Config l298n_config;
 
 void L298N_Init(L298N_Config config)
 {
 	l298n_config = config;
-#if GPIO_PIN_DEBUG
+#if DEBUG
 #define BUFSIZE 8
 	char a_dir_1_pin[BUFSIZE] = {'\0'};
 	char a_dir_2_pin[BUFSIZE] = {'\0'};
@@ -52,109 +47,99 @@ void L298N_Init(L298N_Config config)
 		}
 	}
 #undef BUFSIZE
-	debug(
+	debugln(
 		"Initialized" SERIAL_ENDL
 		"Motor A" SERIAL_ENDL
-		"- enabled: %d" SERIAL_ENDL
+		"- enabled: %s" SERIAL_ENDL
+		"- inverted: %s" SERIAL_ENDL
 		"- direction_1: %s" SERIAL_ENDL
 		"- direction_2: %s" SERIAL_ENDL
 		"- speed: %s (%s)" SERIAL_ENDL
 		"Motor B" SERIAL_ENDL
-		"- enabled: %d" SERIAL_ENDL
+		"- enabled: %s" SERIAL_ENDL
+		"- inverted: %s" SERIAL_ENDL
 		"- direction_1: %s" SERIAL_ENDL
 		"- direction_2: %s" SERIAL_ENDL
-		"- speed: %s (%s)" SERIAL_ENDL
+		"- speed: %s (%s)"
 		,
-		config.motor_a.enabled,
+		BOOL_TO_STRING(config.motor_a.enabled),
+		BOOL_TO_STRING(config.motor_a.inverted),
 		a_dir_1_pin,
 		a_dir_2_pin,
 		a_speed_pin, a_speed_type,
-		config.motor_b.enabled,
+		BOOL_TO_STRING(config.motor_b.enabled),
+		BOOL_TO_STRING(config.motor_b.inverted),
 		b_dir_1_pin,
 		b_dir_2_pin,
 		b_speed_pin, b_speed_type
 	);
-#endif // GPIO_PIN_DEBUG
+#endif // DEBUG
+}
+
+static void L298N_MotorSetSpeed(L298N_MotorConfig motor, bool active, uint8_t percentage)
+{
+	if (!active) {
+		if (motor.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
+			GPIO_Pin_Low(motor.speed.digital);
+		else if (motor.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG)
+			PWM_Pin_Stop(motor.speed.analog);
+	} else {
+		if (motor.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
+			GPIO_Pin_High(motor.speed.digital);
+		else if (motor.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG) {
+			PWM_Pin_Start(motor.speed.analog);
+			PWM_Pin_SetDutyCycle(motor.speed.analog, percentage);
+		}
+	}
+
+}
+
+static void L298N_MotorSetDirection(
+		L298N_MotorConfig motor, bool direction_1_high, bool direction_2_high)
+{
+	if (!motor.enabled)
+		return;
+
+	if (direction_1_high)
+		GPIO_Pin_High(motor.direction_1);
+	else
+		GPIO_Pin_Low(motor.direction_1);
+
+	if (direction_2_high)
+		GPIO_Pin_High(motor.direction_2);
+	else
+		GPIO_Pin_Low(motor.direction_2);
+}
+
+static void L298N_MotorForward(L298N_MotorConfig motor, uint8_t percentage)
+{
+	L298N_MotorSetDirection(motor, motor.inverted, !motor.inverted);
+	L298N_MotorSetSpeed(motor, true, percentage);
+}
+
+static void L298N_MotorBackward(L298N_MotorConfig motor, uint8_t percentage)
+{
+	L298N_MotorSetDirection(motor, !motor.inverted, motor.inverted);
+	L298N_MotorSetSpeed(motor, true, percentage);
 }
 
 void L298N_Forward(uint8_t percentage)
 {
-	debug("Forward %u%%", percentage);
-
-	// TODO: HAL_GPIO_WritePin supports multiple pins in a single write
-	if (l298n_config.motor_a.enabled) {
-		if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_High(l298n_config.motor_a.speed.digital);
-		else if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG) {
-			PWM_Pin_Start(l298n_config.motor_a.speed.analog);
-			PWM_Pin_SetDutyCycle(l298n_config.motor_a.speed.analog, percentage);
-		}
-		GPIO_Pin_High(l298n_config.motor_a.direction_1);
-		GPIO_Pin_Low(l298n_config.motor_a.direction_2);
-	}
-
-	// TODO: probably is inverted
-	if (l298n_config.motor_b.enabled) {
-		if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_High(l298n_config.motor_b.speed.digital);
-		else if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG) {
-			PWM_Pin_Start(l298n_config.motor_b.speed.analog);
-			PWM_Pin_SetDutyCycle(l298n_config.motor_b.speed.analog, percentage);
-		}
-		GPIO_Pin_High(l298n_config.motor_b.direction_1);
-		GPIO_Pin_Low(l298n_config.motor_b.direction_2);
-	}
+	debugln("Forward %u%%", percentage);
+	L298N_MotorForward(l298n_config.motor_a, percentage);
+	L298N_MotorForward(l298n_config.motor_b, percentage);
 }
 
 void L298N_Backward(uint8_t percentage)
 {
-	debug("Backward %u%%", percentage);
-
-	if (l298n_config.motor_a.enabled) {
-		if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_High(l298n_config.motor_a.speed.digital);
-		else if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG) {
-			PWM_Pin_Start(l298n_config.motor_a.speed.analog);
-			PWM_Pin_SetDutyCycle(l298n_config.motor_a.speed.analog, percentage);
-		}
-		GPIO_Pin_Low(l298n_config.motor_a.direction_1);
-		GPIO_Pin_High(l298n_config.motor_a.direction_2);
-	}
-
-	// TODO: probably is inverted
-	if (l298n_config.motor_b.enabled) {
-		if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_High(l298n_config.motor_b.speed.digital);
-		else if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG) {
-			PWM_Pin_Start(l298n_config.motor_b.speed.analog);
-			PWM_Pin_SetDutyCycle(l298n_config.motor_b.speed.analog, percentage);
-		}
-		GPIO_Pin_Low(l298n_config.motor_b.direction_1);
-		GPIO_Pin_High(l298n_config.motor_b.direction_2);
-	}
+	debugln("Backward %u%%", percentage);
+	L298N_MotorBackward(l298n_config.motor_a, percentage);
+	L298N_MotorBackward(l298n_config.motor_b, percentage);
 }
 
 void L298N_Stop()
-
 {
-	debug("Stopping");
-
-	if (l298n_config.motor_a.enabled) {
-		if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_Low(l298n_config.motor_a.speed.digital);
-		else if (l298n_config.motor_a.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG)
-			PWM_Pin_Stop(l298n_config.motor_a.speed.analog);
-		GPIO_Pin_Low(l298n_config.motor_a.direction_1);
-		GPIO_Pin_Low(l298n_config.motor_a.direction_2);
-	}
-
-	// TODO: probably is inverted
-	if (l298n_config.motor_b.enabled) {
-		if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_DIGITAL)
-			GPIO_Pin_Low(l298n_config.motor_b.speed.digital);
-		else if (l298n_config.motor_b.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG)
-			PWM_Pin_Stop(l298n_config.motor_b.speed.analog);
-		GPIO_Pin_Low(l298n_config.motor_b.direction_1);
-		GPIO_Pin_Low(l298n_config.motor_b.direction_2);
-	}
+	debugln("Stop");
+	L298N_MotorSetSpeed(l298n_config.motor_a, false, 0);
+	L298N_MotorSetSpeed(l298n_config.motor_b, false, 0);
 }

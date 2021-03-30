@@ -1,19 +1,11 @@
 #include "lsm6dsl.h"
+#include "debug.h"
 
-#define LSM6DSL_DEBUG 1
-
-#if LSM6DSL_DEBUG
-#include "serial.h"
-#define debug(message, ...) println("{LSM6DSL} " message, ##__VA_ARGS__)
-#else
-#define debug(message, ...)
-#endif
+#define DEBUG_FMT(fmt) "{LSM6DSL} " fmt
 
 // TODO: not hardcoded?
 #define LSM6DSL_RW_MAX_DELAY 100
 
-// Block Data Update: avoid read L and H parts of different samples
-#define LSM6DSL_BDU 1
 
 #define HAL_CHECK(op) \
 if ((status = op) != HAL_OK) {\
@@ -22,23 +14,50 @@ if ((status = op) != HAL_OK) {\
 
 #define HAL_CHECK_MSG(op, msg) \
 if ((status = op) != HAL_OK) {\
-	debug(msg);\
+	debugln(msg);\
 	return status;\
 }
 
 static I2C_HandleTypeDef *i2c;
 
-static LSM6DSL_Accelerometer_Scale xl_scale_mask;
-static LSM6DSL_Gyroscope_Scale g_scale_mask;
+static LSM6DSL_AccelerometerScale xl_scale_mask;
+static LSM6DSL_GyroscopeScale g_scale_mask;
 
 static int xl_scale;
 static int g_scale;
 
 
 
-void LSM6DSL_Init(I2C_HandleTypeDef *i) {
-	debug("Initialized");
+HAL_StatusTypeDef LSM6DSL_Init(I2C_HandleTypeDef *i)
+{
+	HAL_StatusTypeDef status;
+
+	debugln("Initializing...");
 	i2c = i;
+
+	// Resets LSM6DSL registers to default value; requires ~50 us
+	HAL_CHECK(
+		LSM6DSL_WriteRegister(
+			LSM6DSL_REG_CTRL3_C,
+			LSM6DSL_REG_CTRL3_C_BIT_SW_RESET)
+	)
+
+	HAL_CHECK(
+		LSM6DSL_WriteRegister(
+			LSM6DSL_REG_CTRL3_C,
+			LSM6DSL_REG_CTRL3_C_BIT_BDU)
+	)
+
+	// TODO: is this needed?
+//	HAL_CHECK(
+//		LSM6DSL_WriteRegister(
+//			LSM6DSL_REG_MASTER_CONFIG,
+//			LSM6DSL_REG_MASTER_CONFIG_BIT_DRDY_ON_INT1)
+//	)
+
+	debugln("Initialized");
+
+	return status;
 }
 
 
@@ -46,7 +65,7 @@ HAL_StatusTypeDef LSM6DSL_ReadRegister(uint8_t reg, uint8_t *out)
 {
 	HAL_StatusTypeDef status;
 
-	debug("r[%x] ...", reg);
+	debugln("r[0x%02X] ...", reg);
 
 	HAL_CHECK_MSG(
 		HAL_I2C_Master_Transmit(
@@ -60,7 +79,7 @@ HAL_StatusTypeDef LSM6DSL_ReadRegister(uint8_t reg, uint8_t *out)
 		"Failed to read (HAL_I2C_Master_Receive failed)"
 	)
 
-	debug("r[%x] = %x", reg, *out);
+	debugln("r[0x%02X] = 0x%02X", reg, *out);
 
 	return status;
 }
@@ -83,7 +102,7 @@ HAL_StatusTypeDef LSM6DSL_WriteRegister(uint8_t reg, uint8_t value)
 	HAL_StatusTypeDef status;
 	uint8_t sendbuf[] = {reg, value};
 
-	debug("w[%x] <- %x ...", reg, value);
+	debugln("w[0x%02X] <- 0x%02X ...", reg, value);
 
 	HAL_CHECK_MSG(
 		HAL_I2C_Master_Transmit(
@@ -91,29 +110,31 @@ HAL_StatusTypeDef LSM6DSL_WriteRegister(uint8_t reg, uint8_t value)
 		"Failed to write"
 	)
 
-	debug("w[%x] <- %x", reg, value);
+	debugln("w[0x%02X] = 0x%02X", reg, value);
 
 	return status;
 }
 
-void LSM6DSL_AssertHealthy()
+bool LSM6DSL_IsHealthy()
 {
 	uint8_t value;
 
 	if (LSM6DSL_ReadRegister(LSM6DSL_REG_WHO_AM_AI, &value) != HAL_OK ||
 		value != 0x6A) {
-		debug("LSM6DSL_AssertHealthy failed: WHO_AM_I != 0x6A");
-		// TODO: abort
+		debugln("LSM6DSL_AssertHealthy failed: WHO_AM_I != 0x6A");
+		return false;
 	}
+
+	return true;
 }
 
 HAL_StatusTypeDef LSM6DSL_EnableAccelerometer(
 		LSM6DSL_Frequency frequency,
-		LSM6DSL_Accelerometer_Scale scale,
-		LSM6DSL_Interrupt interrupt)
+		LSM6DSL_AccelerometerScale scale)
 {
 	HAL_StatusTypeDef status;
-	debug("Enabling accelerometer");
+
+	debugln("Enabling accelerometer...");
 
 	xl_scale_mask = scale;
 	switch(xl_scale_mask)
@@ -126,41 +147,21 @@ HAL_StatusTypeDef LSM6DSL_EnableAccelerometer(
 
 	uint8_t value = frequency | scale;
 
-#if LSM6DSL_BDU
-	HAL_CHECK(
-			LSM6DSL_WriteRegister(
-		LSM6DSL_REG_CTRL3_C, LSM6DSL_REG_CTRL3_C_BIT_BDU))
-#endif
-
 	HAL_CHECK(
 		LSM6DSL_WriteRegister(LSM6DSL_REG_CTRL1_XL, value)
 	)
 
-	if (interrupt == LSM6DSL_INT_1) {
-		debug("Using INTERRUPT 1 for accelerometer");
-		HAL_CHECK(
-				LSM6DSL_WriteRegister(
-			LSM6DSL_REG_INT1_CTRL, LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_XL)
-		)
-	}
-	else if (interrupt == LSM6DSL_INT_2) {
-		debug("Using INTERRUPT 2 for accelerometer");
-		HAL_CHECK(
-				LSM6DSL_WriteRegister(
-			LSM6DSL_REG_INT2_CTRL, LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_XL)
-		)
-	}
+	debugln("Accelerometer enabled");
 
 	return status;
 }
 
 HAL_StatusTypeDef LSM6DSL_EnableGyroscope(
 		LSM6DSL_Frequency frequency,
-		LSM6DSL_Gyroscope_Scale scale,
-		LSM6DSL_Interrupt interrupt)
+		LSM6DSL_GyroscopeScale scale)
 {
 	HAL_StatusTypeDef status;
-	debug("Enabling gyroscope");
+	debugln("Enabling gyroscope...");
 
 	g_scale_mask = scale;
 	switch(g_scale_mask)
@@ -173,48 +174,189 @@ HAL_StatusTypeDef LSM6DSL_EnableGyroscope(
 
 	uint8_t value = frequency | scale;
 
-#if LSM6DSL_BDU
-	HAL_CHECK(LSM6DSL_WriteRegister(
-		LSM6DSL_REG_CTRL3_C, LSM6DSL_REG_CTRL3_C_BIT_BDU))
-#endif
 
 	HAL_CHECK(
 		LSM6DSL_WriteRegister(LSM6DSL_REG_CTRL2_G, value)
 	)
 
-	if (interrupt == LSM6DSL_INT_1) {
-		debug("Using INTERRUPT 1 for gyroscope");
-		HAL_CHECK(
-				LSM6DSL_WriteRegister(
-			LSM6DSL_REG_INT1_CTRL, LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_G)
-		)
-	}
-	else if (interrupt == LSM6DSL_INT_2) {
-		debug("Using INTERRUPT 2 for gyroscope");
-		HAL_CHECK(
-				LSM6DSL_WriteRegister(
-			LSM6DSL_REG_INT2_CTRL, LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_G)
-		)
-	}
+	debugln("Gyroscope enabled");
 
 	return status;
 }
 
 HAL_StatusTypeDef LSM6DSL_DisableAccelerometer()
 {
-	debug("Disabling accelerometer");
-	return LSM6DSL_WriteRegister(LSM6DSL_REG_CTRL1_XL, LSM6DSL_POWER_DOWN);
+	HAL_StatusTypeDef status;
+
+	debugln("Disabling accelerometer...");
+
+	HAL_CHECK(
+		LSM6DSL_WriteRegister(
+			LSM6DSL_REG_CTRL1_XL,
+			LSM6DSL_POWER_DOWN)
+	)
+
+	debugln("Accelerometer disabled");
+
+	return status;
+
 }
 
 HAL_StatusTypeDef LSM6DSL_DisableGyroscope()
 {
-	debug("Disabling gyroscope");
-	return LSM6DSL_WriteRegister(LSM6DSL_REG_CTRL2_G, LSM6DSL_POWER_DOWN);
+	HAL_StatusTypeDef status;
+
+	debugln("Disabling gyroscope...");
+
+	HAL_CHECK(
+		LSM6DSL_WriteRegister(
+			LSM6DSL_REG_CTRL2_G,
+			LSM6DSL_POWER_DOWN)
+	)
+
+	debugln("Gyroscope disabled");
+
+	return status;
+}
+
+
+HAL_StatusTypeDef LSM6DSL_SetAccelerometerInterrupt(LSM6DSL_InterruptPin interrupt)
+{
+	HAL_StatusTypeDef status;
+	uint8_t value;
+
+	if (interrupt == LSM6DSL_INT_1) {
+		debugln("Setting accelerometer data-ready signal to INT_1");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT1_CTRL, &value)
+		)
+		value |= LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_XL;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT1_CTRL,
+				value)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debugln("Setting accelerometer data-ready signal to INT_2");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT2_CTRL, &value)
+		)
+		value |= LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_XL;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT2_CTRL,
+				value)
+		)
+	}
+
+
+	return status;
+}
+
+HAL_StatusTypeDef LSM6DSL_SetGyroscopeInterrupt(LSM6DSL_InterruptPin interrupt)
+{
+	HAL_StatusTypeDef status;
+	uint8_t value;
+
+	if (interrupt == LSM6DSL_INT_1) {
+		debugln("Setting gyroscope data-ready signal to INT_1");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT1_CTRL, &value)
+		)
+		value |= LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_G;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT1_CTRL,
+				value)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debugln("Setting gyroscope data-ready signal to INT_2");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT2_CTRL, &value)
+		)
+		value |= LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_G;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT2_CTRL,
+				value)
+		)
+	}
+
+
+	return status;
+}
+
+HAL_StatusTypeDef LSM6DSL_UnsetAccelerometerInterrupt(LSM6DSL_InterruptPin interrupt)
+{
+	HAL_StatusTypeDef status;
+	uint8_t value;
+
+	if (interrupt == LSM6DSL_INT_1) {
+		debugln("Unsetting accelerometer data-ready signal from INT_1");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT1_CTRL, &value)
+		)
+		value &= ~LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_XL;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT1_CTRL,
+				value)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debugln("Unsetting accelerometer data-ready signal from INT_2");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT2_CTRL, &value)
+		)
+		value &= ~LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_XL;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT2_CTRL,
+				value)
+		)
+	}
+
+	return status;
+}
+
+HAL_StatusTypeDef LSM6DSL_UnsetGyroscopeInterrupt(LSM6DSL_InterruptPin interrupt)
+{
+	HAL_StatusTypeDef status;
+	uint8_t value;
+
+	if (interrupt == LSM6DSL_INT_1) {
+		debugln("Unsetting gyroscope data-ready signal from INT_1");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT1_CTRL, &value)
+		)
+		value &= ~LSM6DSL_REG_INT1_CTRL_BIT_INT1_DRDY_G;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT1_CTRL,
+				value)
+		)
+	}
+	else if (interrupt == LSM6DSL_INT_2) {
+		debugln("Unsetting gyroscope data-ready signal from INT_2");
+		HAL_CHECK(
+			LSM6DSL_ReadRegister(LSM6DSL_REG_INT2_CTRL, &value)
+		)
+		value &= ~LSM6DSL_REG_INT2_CTRL_BIT_INT2_DRDY_G;
+		HAL_CHECK(
+			LSM6DSL_WriteRegister(
+				LSM6DSL_REG_INT2_CTRL,
+				value)
+		)
+	}
+
+	return status;
 }
 
 HAL_StatusTypeDef LSM6DSL_ReadStatus(uint8_t *value)
 {
-	debug("Reading status...");
+	debugln("Reading status...");
 	return LSM6DSL_ReadRegister(LSM6DSL_REG_STATUS, value);
 }
 
@@ -226,7 +368,7 @@ bool LSM6DSL_IsAccelerometerDataReady()
 	return status == HAL_OK && (lsm6dsl_status & LSM6DSL_REG_STATUS_BIT_XLDA);
 }
 
-bool LSM6DSL_Is_GyroscopeDataReady()
+bool LSM6DSL_IsGyroscopeDataReady()
 {
 	uint8_t lsm6dsl_status;
 	HAL_StatusTypeDef status = LSM6DSL_ReadStatus(&lsm6dsl_status);
@@ -264,7 +406,7 @@ HAL_StatusTypeDef LSM6DSL_ReadAccelerometer(int16_t *x, int16_t *y, int16_t *z)
 			LSM6DSL_REG_OUTZ_L_XL, LSM6DSL_REG_OUTZ_H_XL, &_z)
 	)
 
-	debug("LSM6DSL_ReadAccelerometer RAW: (x=%u, y=%u, z=%u) [scale = %dg]",
+	debugln("LSM6DSL_ReadAccelerometer RAW: (x=%u, y=%u, z=%u) [scale = %dg]",
 			_x, _y, _z, xl_scale);
 
 	*x = (int16_t) _x;
@@ -312,7 +454,7 @@ HAL_StatusTypeDef LSM6DSL_ReadGyroscope(int16_t *x, int16_t *y, int16_t *z)
 			LSM6DSL_REG_OUTZ_L_G, LSM6DSL_REG_OUTZ_H_G, &_z)
 	)
 
-	debug("LSM6DSL_ReadGyroscope RAW: (x=%u, y=%u, z=%u) [scale = %ddps]",
+	debugln("LSM6DSL_ReadGyroscope RAW: (x=%u, y=%u, z=%u) [scale = %ddps]",
 			_x, _y, _z, g_scale);
 
 	*x = (int16_t) _x;
@@ -351,7 +493,7 @@ HAL_StatusTypeDef LSM6DSL_ReadTemperature_C(float *temperature)
 			LSM6DSL_REG_OUT_TEMP_L, LSM6DSL_REG_OUT_TEMP_H, &value)
 	)
 
-	debug("LSM6DSL_Read_Temperature RAW: %u", value);
+	debugln("LSM6DSL_Read_Temperature RAW: %u", value);
 
 	*temperature = 25.0f + ((int16_t) value / 256.0f);
 
