@@ -23,21 +23,35 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h>
+#include <stdlib.h>
+
 #include "serial.h"
-#include "debug.h"
 #include "lsm6dsl.h"
 #include "l298n.h"
 #include "gpio_pin.h"
+#include "std.h"
+#include "verbose.h"
+#include "math.h"
+
+//#define ARM_MATH_CM4
+//#include "arm_math.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
+typedef StaticTask_t osStaticThreadDef_t;
+typedef StaticSemaphore_t osStaticMutexDef_t;
+typedef StaticEventGroup_t osStaticEventGroupDef_t;
 /* USER CODE BEGIN PTD */
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEBUG_FMT(fmt) "{MAIN} " fmt
+#define VERBOSE_FMT(fmt) "{MAIN} " fmt
+
+#define LSM6DSL_EVENT_INTERRUPT			BIT(0)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -52,8 +66,49 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 
-osThreadId defaultTaskHandle;
+/* Definitions for primaryTask */
+osThreadId_t primaryTaskHandle;
+uint32_t primaryTaskBuffer[ 256 ];
+osStaticThreadDef_t primaryTaskControlBlock;
+const osThreadAttr_t primaryTask_attributes = {
+  .name = "primaryTask",
+  .cb_mem = &primaryTaskControlBlock,
+  .cb_size = sizeof(primaryTaskControlBlock),
+  .stack_mem = &primaryTaskBuffer[0],
+  .stack_size = sizeof(primaryTaskBuffer),
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for secondaryTask */
+osThreadId_t secondaryTaskHandle;
+uint32_t secondaryTaskBuffer[ 256 ];
+osStaticThreadDef_t secondaryTaskControlBlock;
+const osThreadAttr_t secondaryTask_attributes = {
+  .name = "secondaryTask",
+  .cb_mem = &secondaryTaskControlBlock,
+  .cb_size = sizeof(secondaryTaskControlBlock),
+  .stack_mem = &secondaryTaskBuffer[0],
+  .stack_size = sizeof(secondaryTaskBuffer),
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for robotStateMutex */
+osMutexId_t robotStateMutexHandle;
+osStaticMutexDef_t robotStateMutexControlBlock;
+const osMutexAttr_t robotStateMutex_attributes = {
+  .name = "robotStateMutex",
+  .cb_mem = &robotStateMutexControlBlock,
+  .cb_size = sizeof(robotStateMutexControlBlock),
+};
+/* Definitions for lsm6dslEvent */
+osEventFlagsId_t lsm6dslEventHandle;
+osStaticEventGroupDef_t lsm6dslEventControlBlock;
+const osEventFlagsAttr_t lsm6dslEvent_attributes = {
+  .name = "lsm6dslEvent",
+  .cb_mem = &lsm6dslEventControlBlock,
+  .cb_size = sizeof(lsm6dslEventControlBlock),
+};
 /* USER CODE BEGIN PV */
+static float roll;
+static GPIO_Pin led1 = { .port = LED_1_GPIO_Port, .pin = LED_1_Pin };
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,7 +117,8 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_TIM3_Init(void);
-void StartDefaultTask(void const * argument);
+void StartPrimaryTask(void *argument);
+void StartSecondaryTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -107,8 +163,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   Serial_Init(&huart1);
 
-  debugln("=============================");
-  debugln("Peripherals initialization...");
+  verboseln("=============================");
+  verboseln("Peripherals initialization...");
 
   LSM6DSL_Init(&hi2c2);
 
@@ -154,8 +210,14 @@ int main(void)
 
   L298N_Init(l298n_config);
 
-  debugln("Starting FreeRTOS kernel...");
+  verboseln("Starting FreeRTOS kernel...");
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+  /* Create the mutex(es) */
+  /* creation of robotStateMutex */
+  robotStateMutexHandle = osMutexNew(&robotStateMutex_attributes);
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
@@ -174,13 +236,21 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 256);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* creation of primaryTask */
+  primaryTaskHandle = osThreadNew(StartPrimaryTask, NULL, &primaryTask_attributes);
+
+  /* creation of secondaryTask */
+  secondaryTaskHandle = osThreadNew(StartSecondaryTask, NULL, &secondaryTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
+
+  /* creation of lsm6dslEvent */
+  lsm6dslEventHandle = osEventFlagsNew(&lsm6dslEvent_attributes);
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
   osKernelStart();
@@ -319,9 +389,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 15;
+  htim3.Init.Prescaler = 48;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 50000;
+  htim3.Init.Period = 65305;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -453,146 +523,172 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 
-static void setupLSM6DSL() {
-	if (!LSM6DSL_IsHealthy())
-		return;
-	LSM6DSL_EnableAccelerometer(
-		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_XL_2_G);
-	LSM6DSL_EnableGyroscope(
-		LSM6DSL_HIGH_PERF_MODE, LSM6DSL_FS_G_250_DPS);
-
-//	LSM6DSL_SetAccelerometerInterrupt(LSM6DSL_INT_1);
-	LSM6DSL_SetGyroscopeInterrupt(LSM6DSL_INT_1);
-}
-
-
-static void readLSM6DSL() {
-#if 0
-	while (!LSM6DSL_IsTemperatureDataReady()) {
-		debugln("Waiting for temperature data...");
-		osDelay(100);
-	}
-
-	float t;
-	if (LSM6DSL_ReadTemperature_C(&t) != HAL_OK)
-		return;
-
-	debugln("Temperature = %f", t);
-#endif
-
-#if 0
-	while (!LSM6DSL_IsAccelerometerDataReady()) {
-		debugln("Waiting for accelerometer data...");
-		osDelay(10);
-	}
-
-	float xl_x, xl_y, xl_z;
-	if (LSM6DSL_ReadAccelerometer_g(&xl_x, &xl_y, &xl_z) != HAL_OK)
-		return;
-
-	debugln("Accelerometer: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
-#endif
-
-#if 1
-	while (!LSM6DSL_IsGyroscopeDataReady()) {
-		debugln("Waiting for gyroscope data...");
-		osDelay(10);
-	}
-
-	float g_x, g_y, g_z;
-	if (LSM6DSL_ReadGyroscope_dps(&g_x, &g_y, &g_z) != HAL_OK)
-		return;
-
-	debugln("Gyroscope: (x=%f, y=%f, z=%f)dps", g_x, g_y, g_z);
-#endif
-}
-
-static void demoLSM6DSL()
-{
-	setupLSM6DSL();
-
-//	int iter = 0;
-//	while (iter < 100) {
-//		debugln("--- Iter %d ---", iter);
-//
-//		readLSM6DSL();
-//		osDelay(100);
-//
-//		iter++;
-//	}
-
-	while (1) {
-
-	}
-}
-
-static void demoL298N()
-{
-	while (1) {
-
-	}
-}
-
 void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
-	static int mode = 0;
-	static uint8_t duty_cycle = 0;
 
-#if DEBUG
+#if VERBOSE
 	GPIO_Pin gpio_pin = {
 		.pin = pin
 	};
 	char s_gpio_pin[8];
 	GPIO_Pin_ToString(gpio_pin, s_gpio_pin, 8);
-	debugln("HAL_GPIO_EXTI_Callback on pin %s", s_gpio_pin);
+	verboseln("HAL_GPIO_EXTI_Callback on pin %s", s_gpio_pin);
 #endif // DEBUG
 
+
+	if (pin == LSM6DSL_INT_1_Pin) {
+		verboseln("Received LSM6DSL data-ready signal");
+		osEventFlagsSet(lsm6dslEventHandle, LSM6DSL_EVENT_INTERRUPT);
+	}
 	if (pin == Button_Blue_Pin) {
-		debugln("Button has been pressed");
-		static int counter = 0;
-		counter++;
+		verboseln("Button has been pressed");
+		GPIO_Pin_Toggle(led1);
+		L298N_Stop();
+		LSM6DSL_DisableAccelerometer();
+		LSM6DSL_DisableGyroscope();
+	}
+}
 
-		float xl_x, xl_y, xl_z;
-		if (LSM6DSL_ReadGyroscope_dps(&xl_x, &xl_y, &xl_z) != HAL_OK)
-			return;
+static void setRoll(float roll_deg)
+{
+	static const float ACTION_THRESHOLD_DEG = 1;
+	static const float ACTION_CRITICAL_DEG = 30;
+	static const float DUTY_CYCLE_MIN = 40;
+	static const float DUTY_CYCLE_MAX = 100;
 
-		debugln("Gyroscope: (x=%f, y=%f, z=%f)g", xl_x, xl_y, xl_z);
+	verboseln("Roll  (x): %f", roll_deg);
 
-//		mode = (mode + 1) % 3;
-//		debugln("Mode: %d", mode);
+	float roll_abs = ABS(roll_deg);
+
+	uint8_t duty_cycle = 0;
+	if (roll_abs > ACTION_THRESHOLD_DEG) {
+		if (roll_abs > ACTION_CRITICAL_DEG)
+			duty_cycle = DUTY_CYCLE_MAX;
+		else
+			duty_cycle = mapf(roll_abs,
+					ACTION_THRESHOLD_DEG, ACTION_CRITICAL_DEG,
+					DUTY_CYCLE_MIN, DUTY_CYCLE_MAX);
+		verboseln("Duty%%: %u", duty_cycle);
+	}
+
+
+	osMutexAcquire(robotStateMutexHandle, osWaitForever);
+	roll = roll_deg;
+
+	if (roll_abs < ACTION_THRESHOLD_DEG) {
+		L298N_Stop();
+	} else {
+		if (roll < 0) {
+			L298N_Backward(duty_cycle);
+		} else {
+			L298N_Forward(duty_cycle);
+		}
+	}
+
+	osMutexRelease(robotStateMutexHandle);
+}
+
+static void handleAccelerometerData(float x, float y, float z)
+{
+	verboseln("Accelerometer: 	(x=%f, y=%f, z=%f)g", x, y, z);
+	float roll = RAD_TO_DEG(atan2f(y, z));
+	setRoll(roll);
+
+//	float roll2 = RAD_TO_DEG(atanf(y / sqrt(xx+zz)));
+//	float pitch = RAD_TO_DEG(atanf(x / sqrt(yy+zz)));
 //
-//		if (mode == 0) {
-//			L298N_Stop();
-//		}
-//		else if (mode == 1) {
-//			duty_cycle = (duty_cycle + 10) % 100;
-//			L298N_Forward(duty_cycle);
-//		}
-//		else if (mode == 2) {
-//			L298N_Backward(duty_cycle);
-//		}
+//	float xx = x * x;
+//	float yy = y * y;
+//	float zz = z * z;
+//	float norm = sqrtf(xx + yy + zz);
+//
+//	verboseln("Norm: %f", norm);
 
-//		toggleLed1();
+//	float pitch = RAD_TO_DEG(atan2f(x, z));
+
+//	verboseln("Pitch (y): %f", pitch);
+}
+
+static void demoReadSerial()
+{
+	char data[16];
+	while (1) {
+		Serial_ReadStringCR(data, 16);
+		println(">> %s", data);
+		if (strstarts(data, "f=")) {
+			uint8_t duty = strtol(&data[strlen("f=")], NULL, 10);
+			L298N_Forward(duty);
+		} else if (strstarts(data, "b=")) {
+			uint8_t duty = strtol(&data[strlen("b=")], NULL, 10);
+			L298N_Backward(duty);
+		} else if (streq(data, "stop")) {
+			L298N_Stop();
+		} else if (strstarts(data, "psc=")) {
+			uint16_t psc = strtol(&data[strlen("psc=")], NULL, 10);
+			verboseln("psc=%u", psc);
+			__HAL_TIM_SET_PRESCALER(&htim3, psc);
+		} else if (strstarts(data, "arr=")) {
+			uint16_t arr = strtol(&data[strlen("arr=")], NULL, 10);
+			verboseln("arr=%u", arr);
+			__HAL_TIM_SET_AUTORELOAD(&htim3, arr);
+		}
 	}
 }
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartPrimaryTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the primaryTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
+/* USER CODE END Header_StartPrimaryTask */
+void StartPrimaryTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+	LSM6DSL_EnableAccelerometer(LSM6DSL_208_HZ, LSM6DSL_FS_XL_2_G);
+//	LSM6DSL_EnableGyroscope(LSM6DSL_12_HZ, LSM6DSL_FS_G_250_DPS);
+	LSM6DSL_SetAccelerometerInterrupt(LSM6DSL_INT_1);
+//	LSM6DSL_SetGyroscopeInterrupt(LSM6DSL_INT_1);
 
-	demoLSM6DSL();
-//	demoL298N();
+	struct { float x, y, z; } xl;
 
+	while (1) {
+		verboseln("Waiting for LSM6DSL data...");
+		osEventFlagsWait(
+				lsm6dslEventHandle, LSM6DSL_EVENT_INTERRUPT,
+				osFlagsWaitAll, osWaitForever);
+		verboseln("Received LSM6DSL data ready signal");
+
+		uint8_t status;
+		if (LSM6DSL_ReadStatus(&status) == HAL_OK) {
+			if (status & LSM6DSL_REG_STATUS_BIT_XLDA) {
+				if (LSM6DSL_ReadAccelerometer_g(&xl.x, &xl.y, &xl.z) != HAL_OK)
+					continue;
+				handleAccelerometerData(xl.x, xl.y, xl.z);
+			}
+		}
+	}
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartSecondaryTask */
+/**
+* @brief Function implementing the secondaryTas thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartSecondaryTask */
+void StartSecondaryTask(void *argument)
+{
+  /* USER CODE BEGIN StartSecondaryTask */
+	while (1) {
+		println("Roll  (x): %f", roll);
+		osDelay(100);
+	}
+
+  /* USER CODE END StartSecondaryTask */
 }
 
  /**
@@ -625,7 +721,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 
-	debugln("ERROR");
+	verboseln("ERROR");
 	while (1) {
 
 	}

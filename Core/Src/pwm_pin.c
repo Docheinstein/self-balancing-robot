@@ -1,40 +1,61 @@
 #include "pwm_pin.h"
 #include "printf.h"
-#include "debug.h"
 
-#define DEBUG_FMT(fmt) "{PWM_Pin} " fmt
+#include "verbose.h"
+
+#define VERBOSE_FMT(fmt) "{PWM_Pin} " fmt
 
 void PWM_Pin_Start(PWM_Pin pin)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debugln("Start     (%s)", s_pin);
+	verboseln("Start     (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Start(pin.tim, pin.channel);
 }
 
 void PWM_Pin_Stop(PWM_Pin pin)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debugln("Stop      (%s)", s_pin);
+	verboseln("Stop      (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Stop(pin.tim, pin.channel);
 }
 
 void PWM_Pin_SetDutyCycle(PWM_Pin pin, uint8_t percentage)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	debugln("DutyCycle (%s) := %u%%", s_pin, percentage);
+	verboseln("DutyCycle (%s) := %u%%", s_pin, percentage);
 #endif
 	__HAL_TIM_SET_COMPARE(
 			pin.tim, pin.channel,
-			__HAL_TIM_GET_AUTORELOAD(pin.tim) * percentage / 100
+			(int )__HAL_TIM_GET_AUTORELOAD(pin.tim) * percentage / 100
 	);
+}
+
+void PWM_Pin_SetPSC(PWM_Pin pin, uint16_t psc)
+{
+#if VERBOSE
+	char s_pin[8];
+	PWM_Pin_ToString(pin, s_pin, 8);
+	verboseln("PSC (%s) := %u%%", s_pin, psc);
+#endif
+	__HAL_TIM_SET_PRESCALER(pin.tim, psc);
+}
+
+void PWM_Pin_SetARR(PWM_Pin pin, uint16_t arr)
+{
+#if VERBOSE
+	char s_pin[8];
+	PWM_Pin_ToString(pin, s_pin, 8);
+	verboseln("ARR (%s) := %u%%", s_pin, arr);
+#endif
+	__HAL_TIM_SET_AUTORELOAD(pin.tim, arr);
 }
 
 

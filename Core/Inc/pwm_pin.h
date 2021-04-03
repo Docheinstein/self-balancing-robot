@@ -8,12 +8,15 @@
 typedef struct PWM_Pin {
 	TIM_HandleTypeDef *tim;
 	uint32_t channel;
-	uint16_t arr; // AutoReload Register
 } PWM_Pin;
 
 void PWM_Pin_Start(PWM_Pin pin);
 void PWM_Pin_Stop(PWM_Pin pin);
 void PWM_Pin_SetDutyCycle(PWM_Pin pin, uint8_t percentage);
+
+// Not strictly necessary, can be configured in .ioc at compile time
+void PWM_Pin_SetPSC(PWM_Pin pin, uint16_t psc);
+void PWM_Pin_SetARR(PWM_Pin pin, uint16_t arr);
 
 void PWM_Pin_ToString(PWM_Pin pin, char *buf, size_t buflen);
 

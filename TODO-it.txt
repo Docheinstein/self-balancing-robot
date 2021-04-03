@@ -1,4 +1,5 @@
-1. Capire FreeRTOS (task, ...)
-2. Capire come scrivere gli interrupt handler per giroscopio ed accellerometro
-3. Altri LED
-4. LED blink/intensity dipendente dalla posizione data dal giroscopio?
+1. Altri LED
+2. LED blink/intensity dipendente dalla posizione data dal giroscopio?
+3. Scrivere how-to e pins-mapping
+4. Logica di controllo che faccia stare effetivamente in piedi il robot
+4. Logica di controllo che faccia stare effetivamente in piedi il robot

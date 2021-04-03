@@ -1,16 +1,16 @@
+#include <std.h>
 #include "l298n.h"
 #include "serial.h"
-#include "debug.h"
-#include "strings.h"
+#include "verbose.h"
 
-#define DEBUG_FMT(fmt) "{L298N} " fmt
+#define VERBOSE_FMT(fmt) "{L298N} " fmt
 
 static L298N_Config l298n_config;
 
 void L298N_Init(L298N_Config config)
 {
 	l298n_config = config;
-#if DEBUG
+#if VERBOSE
 #define BUFSIZE 8
 	char a_dir_1_pin[BUFSIZE] = {'\0'};
 	char a_dir_2_pin[BUFSIZE] = {'\0'};
@@ -47,7 +47,7 @@ void L298N_Init(L298N_Config config)
 		}
 	}
 #undef BUFSIZE
-	debugln(
+	verboseln(
 		"Initialized" SERIAL_ENDL
 		"Motor A" SERIAL_ENDL
 		"- enabled: %s" SERIAL_ENDL
@@ -125,21 +125,21 @@ static void L298N_MotorBackward(L298N_MotorConfig motor, uint8_t percentage)
 
 void L298N_Forward(uint8_t percentage)
 {
-	debugln("Forward %u%%", percentage);
+	verboseln("Forward %u%%", percentage);
 	L298N_MotorForward(l298n_config.motor_a, percentage);
 	L298N_MotorForward(l298n_config.motor_b, percentage);
 }
 
 void L298N_Backward(uint8_t percentage)
 {
-	debugln("Backward %u%%", percentage);
+	verboseln("Backward %u%%", percentage);
 	L298N_MotorBackward(l298n_config.motor_a, percentage);
 	L298N_MotorBackward(l298n_config.motor_b, percentage);
 }
 
 void L298N_Stop()
 {
-	debugln("Stop");
+	verboseln("Stop");
 	L298N_MotorSetSpeed(l298n_config.motor_a, false, 0);
 	L298N_MotorSetSpeed(l298n_config.motor_b, false, 0);
 }

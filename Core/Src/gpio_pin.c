@@ -1,36 +1,37 @@
 #include "gpio_pin.h"
 #include "stm32l4xx.h"
 #include "printf.h"
-#include "debug.h"
 
-#define DEBUG_FMT(fmt) "{GPIO_Pin} " fmt
+#include "verbose.h"
+
+#define VERBOSE_FMT(fmt) "{GPIO_Pin} " fmt
 
 void GPIO_Pin_Toggle(GPIO_Pin pin)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debugln("Toggle (%s)", s_pin);
+	verboseln("Toggle (%s)", s_pin);
 #endif
 	HAL_GPIO_TogglePin(pin.port, pin.pin);
 }
 
 void GPIO_Pin_High(GPIO_Pin pin)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debugln("High   (%s)", s_pin);
+	verboseln("High   (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_SET);
 }
 
 void GPIO_Pin_Low(GPIO_Pin pin)
 {
-#if DEBUG
+#if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	debugln("Low    (%s)", s_pin);
+	verboseln("Low    (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_RESET);
 }
