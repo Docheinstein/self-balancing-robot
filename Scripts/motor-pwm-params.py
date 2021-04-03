@@ -1,4 +1,3 @@
-import sys
 import argparse
 
 """
@@ -15,8 +14,8 @@ Fmotor = --------------------------
 """
 
 
-def compute_motor_params(clock_freq, motor_freq, 
-                         arr_min=256, proposals_max=10):
+def compute_params(clock_freq, motor_freq,
+                   arr_min=256, proposals_max=10):
     UINT16_MAX = 2**16 - 1
     ARR_MIN = 32
     
@@ -59,7 +58,7 @@ def main():
     args = vars(parser.parse_args())
     clock_freq = args.get("clock_freq")
     motor_freq = args.get("motor_freq")
-    compute_motor_params(clock_freq, motor_freq)
+    compute_params(clock_freq, motor_freq)
     
 
 if __name__ == "__main__":
