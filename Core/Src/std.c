@@ -22,3 +22,16 @@ float mapf(float x, float in_min, float in_max, float out_min, float out_max)
 {
 	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
+
+
+/* Returns max if x > max, min if x < min, x otherwise */
+float rangef(float x, float min, float max)
+{
+	return MIN(max, MAX(min, x));
+}
+
+/* Returns max if x > max, min if x < min, x otherwise */
+int range(int x, int min, int max)
+{
+	return MIN(max, MAX(min, x));
+}
