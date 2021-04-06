@@ -36,6 +36,14 @@ void GPIO_Pin_Low(GPIO_Pin pin)
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_RESET);
 }
 
+void GPIO_Pin_Set(GPIO_Pin pin, bool high)
+{
+	if (high)
+		GPIO_Pin_High(pin);
+	else
+		GPIO_Pin_Low(pin);
+}
+
 static const char * GPIO_Pin_PortToString(GPIO_TypeDef *port)
 {
 	if (port == GPIOA)
