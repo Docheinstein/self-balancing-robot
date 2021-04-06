@@ -4,14 +4,13 @@
 #include <bits.h>
 #include "stdbool.h"
 #include "stm32l4xx_hal.h"
-
+#include "dim3.h"
 
 // ============== I2C ==================
 
 #define LSM6DSL_I2C_ADDR 			(0x6A << 1)
 #define LSM6DSL_I2C_WRITE_ADDR 		0xD4
 #define LSM6DSL_I2C_READ_ADDR 	 	0xD5
-
 
 // =========== REGISTERS ===============
 
@@ -84,14 +83,11 @@
 
 // ============ DATA TYPES ============
 
-#define LSM6DSL_LOW_POWER_MODE 	LSM6DSL_12_HZ
-#define LSM6DSL_NORMAL_MODE 	LSM6DSL_104_HZ
-#define LSM6DSL_HIGH_PERF_MODE 	LSM6DSL_416_HZ
-
 typedef enum {
 	LSM6DSL_POWER_DOWN  = 0x00,	// Power-Down mode
 	LSM6DSL_12_HZ   	= 0x10,	// Low-Power mode
-	LSM6DSL_56_HZ    	= 0x20,
+	LSM6DSL_26_HZ    	= 0x20,
+	LSM6DSL_52_HZ    	= 0x30,
 	LSM6DSL_104_HZ    	= 0x40,	// Normal mode
 	LSM6DSL_208_HZ  	= 0x50,
 	LSM6DSL_416_HZ  	= 0x60,	// High-Performance mode
@@ -155,10 +151,12 @@ bool LSM6DSL_IsAccelerometerDataReady();
 bool LSM6DSL_IsGyroscopeDataReady();
 bool LSM6DSL_IsTemperatureDataReady();
 
-HAL_StatusTypeDef LSM6DSL_ReadAccelerometer(int16_t *x, int16_t *y, int16_t *z);
-HAL_StatusTypeDef LSM6DSL_ReadAccelerometer_g(float *x, float *y, float *z); // g
-HAL_StatusTypeDef LSM6DSL_ReadGyroscope(int16_t *x, int16_t *y, int16_t *z);
-HAL_StatusTypeDef LSM6DSL_ReadGyroscope_dps(float *x, float *y, float *z); // dps: degrees per second
+HAL_StatusTypeDef LSM6DSL_ReadAccelerometer(dim3_i16 *xl);
+HAL_StatusTypeDef LSM6DSL_ReadAccelerometer_g(dim3_f *xl); // g
+HAL_StatusTypeDef LSM6DSL_ReadGyroscope(dim3_i16 *g);
+HAL_StatusTypeDef LSM6DSL_ReadGyroscope_dps(dim3_f *g); // dps: degrees per second
 HAL_StatusTypeDef LSM6DSL_ReadTemperature_C(float *temperature); // C°
+
+float LSM6DSL_Frequency_ToSampleRate(LSM6DSL_Frequency freq); // Hz
 
 #endif /* LSM6DSL_H */

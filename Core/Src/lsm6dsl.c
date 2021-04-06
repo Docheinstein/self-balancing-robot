@@ -388,98 +388,98 @@ bool LSM6DSL_Is_TemperatureDataReady()
 	return status == HAL_OK && (lsm6dsl_status & LSM6DSL_REG_STATUS_BIT_TDA);
 }
 
-HAL_StatusTypeDef LSM6DSL_ReadAccelerometer(int16_t *x, int16_t *y, int16_t *z)
+HAL_StatusTypeDef LSM6DSL_ReadAccelerometer(dim3_i16 *xl)
 {
 	// 0 -> 0g
 
 	HAL_StatusTypeDef status;
-	uint16_t _x, _y, _z;
+	uint16_t x, y, z;
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTX_L_XL, LSM6DSL_REG_OUTX_H_XL, &_x)
+			LSM6DSL_REG_OUTX_L_XL, LSM6DSL_REG_OUTX_H_XL, &x)
 	)
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTY_L_XL, LSM6DSL_REG_OUTY_H_XL, &_y)
+			LSM6DSL_REG_OUTY_L_XL, LSM6DSL_REG_OUTY_H_XL, &y)
 	)
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTZ_L_XL, LSM6DSL_REG_OUTZ_H_XL, &_z)
+			LSM6DSL_REG_OUTZ_L_XL, LSM6DSL_REG_OUTZ_H_XL, &z)
 	)
 
 	verboseln("LSM6DSL_ReadAccelerometer RAW: (x=%u, y=%u, z=%u) [scale = %dg]",
-			_x, _y, _z, xl_scale);
+			x, y, z, xl_scale);
 
-	*x = (int16_t) _x;
-	*y = (int16_t) _y;
-	*z = (int16_t) _z;
+	xl->x = (int16_t) x;
+	xl->y = (int16_t) y;
+	xl->z = (int16_t) z;
 
 	return status;
 }
 
-HAL_StatusTypeDef LSM6DSL_ReadAccelerometer_g(float *x, float *y, float *z)
+HAL_StatusTypeDef LSM6DSL_ReadAccelerometer_g(dim3_f *xl)
 {
 	// Mapping: [2^-15:2^15] -> [-FS:+FS]
 
 	HAL_StatusTypeDef status;
-	int16_t _x, _y, _z;
+	dim3_i16 _xl;
 
-	HAL_CHECK(LSM6DSL_ReadAccelerometer(&_x, &_y, &_z));
+	HAL_CHECK(LSM6DSL_ReadAccelerometer(&_xl))
 
-	*x = (float) _x * xl_scale / (1 << 15);
-	*y = (float) _y * xl_scale / (1 << 15);
-	*z = (float) _z * xl_scale / (1 << 15);
+	xl->x = (float) _xl.x * xl_scale / (1 << 15);
+	xl->y = (float) _xl.y * xl_scale / (1 << 15);
+	xl->z = (float) _xl.z * xl_scale / (1 << 15);
 
 	return status;
 }
 
-HAL_StatusTypeDef LSM6DSL_ReadGyroscope(int16_t *x, int16_t *y, int16_t *z)
+HAL_StatusTypeDef LSM6DSL_ReadGyroscope(dim3_i16 *g)
 {
 	// 0 -> 0dps
 
 	HAL_StatusTypeDef status;
-	uint16_t _x, _y, _z;
+	uint16_t x, y, z;
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTX_L_G, LSM6DSL_REG_OUTX_H_G, &_x)
+			LSM6DSL_REG_OUTX_L_G, LSM6DSL_REG_OUTX_H_G, &x)
 	)
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTY_L_G, LSM6DSL_REG_OUTY_H_G, &_y)
+			LSM6DSL_REG_OUTY_L_G, LSM6DSL_REG_OUTY_H_G, &y)
 	)
 
 	HAL_CHECK(
 		LSM6DSL_ReadRegisters_2(
-			LSM6DSL_REG_OUTZ_L_G, LSM6DSL_REG_OUTZ_H_G, &_z)
+			LSM6DSL_REG_OUTZ_L_G, LSM6DSL_REG_OUTZ_H_G, &z)
 	)
 
 	verboseln("LSM6DSL_ReadGyroscope RAW: (x=%u, y=%u, z=%u) [scale = %ddps]",
-			_x, _y, _z, g_scale);
+			x, y, z, g_scale);
 
-	*x = (int16_t) _x;
-	*y = (int16_t) _y;
-	*z = (int16_t) _z;
+	g->x = (int16_t) x;
+	g->y = (int16_t) y;
+	g->z = (int16_t) z;
 
 	return status;
 }
 
-HAL_StatusTypeDef LSM6DSL_ReadGyroscope_dps(float *x, float *y, float *z)
+HAL_StatusTypeDef LSM6DSL_ReadGyroscope_dps(dim3_f *g)
 {
 	// Mapping: [2^-15:2^15] -> [-FS:+FS]
 
 	HAL_StatusTypeDef status;
-	int16_t _x, _y, _z;
+	dim3_i16 _g;
 
-	HAL_CHECK(LSM6DSL_ReadGyroscope(&_x, &_y, &_z));
+	HAL_CHECK(LSM6DSL_ReadGyroscope(&_g))
 
-	*x = (float) _x * g_scale / (1 << 15);
-	*y = (float) _y * g_scale / (1 << 15);
-	*z = (float) _z * g_scale / (1 << 15);
+	g->x = (float) _g.x * g_scale / (1 << 15);
+	g->y = (float) _g.y * g_scale / (1 << 15);
+	g->z = (float) _g.z * g_scale / (1 << 15);
 
 	return status;
 }
@@ -502,5 +502,33 @@ HAL_StatusTypeDef LSM6DSL_ReadTemperature_C(float *temperature)
 	*temperature = 25.0f + ((int16_t) value / 256.0f);
 
 	return status;
+}
+
+float LSM6DSL_Frequency_ToSampleRate(LSM6DSL_Frequency freq)
+{
+	switch (freq) {
+	case LSM6DSL_12_HZ:
+		return 12.5;
+	case LSM6DSL_26_HZ:
+		return 26;
+	case LSM6DSL_52_HZ:
+		return 52;
+	case LSM6DSL_104_HZ:
+		return 104;
+	case LSM6DSL_208_HZ:
+		return 208;
+	case LSM6DSL_416_HZ:
+		return 416;
+	case LSM6DSL_833_HZ:
+		return 833;
+	case LSM6DSL_1666_HZ:
+		return 1666;
+	case LSM6DSL_3333_HZ:
+		return 3333;
+	case LSM6DSL_6666_HZ:
+		return 6666;
+	default:
+		return 0;
+	}
 }
 
