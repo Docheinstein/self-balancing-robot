@@ -25,6 +25,7 @@ typedef struct L298N_MotorConfig {
 		GPIO_Pin digital;
 		PWM_Pin analog;
 	} speed;
+	float speed_factor;
 } L298N_MotorConfig;
 
 typedef struct L298N_Config {

@@ -87,10 +87,12 @@ static void L298N_MotorSetEnabled(L298N_MotorConfig motor, bool enable)
 	}
 }
 
-static void L298N_MotorSetSpeed(L298N_MotorConfig motor, float percentage_)
+static void L298N_MotorSetSpeed(L298N_MotorConfig motor, float percentage)
 {
 	if (motor.speed_type == L298N_MOTOR_SPEED_TYPE_ANALOG)
-		PWM_Pin_SetDutyCycle(motor.speed.analog, percentage_);
+		PWM_Pin_SetDutyCycle(
+				motor.speed.analog,
+				rangef(motor.speed_factor * percentage, 0.0f, 100.0f));
 }
 
 static void L298N_MotorSetDirection(
@@ -116,17 +118,18 @@ static void L298N_MotorBackward(L298N_MotorConfig motor, float percentage)
 
 static void L298N_MotorStop(L298N_MotorConfig motor)
 {
+	L298N_MotorSetDirection(motor, false, false);
 	L298N_MotorSetEnabled(motor, false);
 }
 
 void L298N_Forward(uint8_t motors, float percentage)
 {
 	if (motors & L298N_MOTOR_A) {
-		verboseln("A: Forward %u%%", percentage);
+		verboseln("A: Forward %.2f%%", percentage);
 		L298N_MotorForward(config.motor_a, percentage);
 	}
 	if (motors & L298N_MOTOR_B) {
-		verboseln("B: Forward %u%%", percentage);
+		verboseln("B: Forward %.2f%%", percentage);
 		L298N_MotorForward(config.motor_b, percentage);
 	}
 }
@@ -134,11 +137,11 @@ void L298N_Forward(uint8_t motors, float percentage)
 void L298N_Backward(uint8_t motors, float percentage)
 {
 	if (motors & L298N_MOTOR_A) {
-		verboseln("A: Backward %u%%", percentage);
+		verboseln("A: Backward %.2f%%", percentage);
 		L298N_MotorBackward(config.motor_a, percentage);
 	}
 	if (motors & L298N_MOTOR_B) {
-		verboseln("B: Backward %u%%", percentage);
+		verboseln("B: Backward %.2f%%", percentage);
 		L298N_MotorBackward(config.motor_b, percentage);
 	}
 }
