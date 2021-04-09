@@ -1,5 +1,6 @@
 #include "pwm_pin.h"
 #include "printf.h"
+#include "math.h"
 
 #include "verbose.h"
 
@@ -25,16 +26,16 @@ void PWM_Pin_Stop(PWM_Pin pin)
 	HAL_TIM_PWM_Stop(pin.tim, pin.channel);
 }
 
-void PWM_Pin_SetDutyCycle(PWM_Pin pin, uint8_t percentage)
+void PWM_Pin_SetDutyCycle(PWM_Pin pin, float percentage)
 {
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("DutyCycle (%s) := %u%%", s_pin, percentage);
+	verboseln("DutyCycle (%s) := %.2f%%", s_pin, 100 * ratio);
 #endif
 	__HAL_TIM_SET_COMPARE(
 			pin.tim, pin.channel,
-			(int )__HAL_TIM_GET_AUTORELOAD(pin.tim) * percentage / 100
+			lroundf(__HAL_TIM_GET_AUTORELOAD(pin.tim) * percentage / 100)
 	);
 }
 

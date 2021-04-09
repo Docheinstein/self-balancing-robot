@@ -12,7 +12,7 @@ typedef struct PWM_Pin {
 
 void PWM_Pin_Start(PWM_Pin pin);
 void PWM_Pin_Stop(PWM_Pin pin);
-void PWM_Pin_SetDutyCycle(PWM_Pin pin, uint8_t percentage);
+void PWM_Pin_SetDutyCycle(PWM_Pin pin, float percentage);
 
 // Not strictly necessary, can be configured in .ioc at compile time
 void PWM_Pin_SetPSC(PWM_Pin pin, uint16_t psc);
