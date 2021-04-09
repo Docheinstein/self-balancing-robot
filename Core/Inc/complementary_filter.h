@@ -9,6 +9,6 @@ typedef struct ComplementaryFilter_Config {
 } ComplementaryFilter_Config;
 
 void ComplementaryFilter_Init(ComplementaryFilter_Config config);
-float ComplementaryFilter_Compute(dim3_f xl, dim3_f g);
+void ComplementaryFilter_Compute(dim3_f xl, dim3_f g, float *roll, float *pitch, float *yaw);
 
 #endif /*  COMPLEMENTARY_FILTER_H */
