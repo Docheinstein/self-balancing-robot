@@ -1,5 +1,4 @@
-1. Altri LED
-2. LED blink/intensity dipendente dalla posizione data dal giroscopio?
-3. Scrivere how-to e pins-mapping
-4. Logica di controllo che faccia stare effetivamente in piedi il robot
-4. Logica di controllo che faccia stare effetivamente in piedi il robot
+1. Tuning PID e filtri (complementary, madgwick)
+2. Scrivere README.MD
+3. Refactor
+4. Commentare codice con qualche spiegazione

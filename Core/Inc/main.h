@@ -63,6 +63,10 @@ void Error_Handler(void);
 #define Button_Blue_Pin GPIO_PIN_13
 #define Button_Blue_GPIO_Port GPIOC
 #define Button_Blue_EXTI_IRQn EXTI15_10_IRQn
+#define GPIO_High_Pin GPIO_PIN_0
+#define GPIO_High_GPIO_Port GPIOC
+#define GPIO_Low_Pin GPIO_PIN_1
+#define GPIO_Low_GPIO_Port GPIOC
 #define Motor_A_Direction_2_Pin GPIO_PIN_0
 #define Motor_A_Direction_2_GPIO_Port GPIOA
 #define Motor_A_Direction_1_Pin GPIO_PIN_1
@@ -75,6 +79,8 @@ void Error_Handler(void);
 #define Motor_A_Speed_PWM_GPIO_Port GPIOB
 #define Motor_B_Speed_PWM_Pin GPIO_PIN_1
 #define Motor_B_Speed_PWM_GPIO_Port GPIOB
+#define LED_2_Pin GPIO_PIN_14
+#define LED_2_GPIO_Port GPIOB
 #define LSM6DSL_INT_1_Pin GPIO_PIN_11
 #define LSM6DSL_INT_1_GPIO_Port GPIOD
 #define LSM6DSL_INT_1_EXTI_IRQn EXTI15_10_IRQn
