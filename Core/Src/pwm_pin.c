@@ -31,7 +31,7 @@ void PWM_Pin_SetDutyCycle(PWM_Pin pin, float percentage)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("DutyCycle (%s) := %.2f%%", s_pin, 100 * ratio);
+	verboseln("DutyCycle (%s) := %.2f%%", s_pin, 100 * percentage);
 #endif
 	__HAL_TIM_SET_COMPARE(
 			pin.tim, pin.channel,
