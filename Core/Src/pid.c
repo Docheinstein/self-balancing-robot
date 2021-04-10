@@ -7,7 +7,6 @@
 static PID_Config config;
 static float sample_time;
 static float Kp, Ki_, Kd_;
-static uint32_t last_compute_time;
 
 void PID_Init(PID_Config c)
 {
@@ -15,7 +14,7 @@ void PID_Init(PID_Config c)
 
 	sample_time = 1 / config.sample_rate;
 
-	float sign = ((config.direction == PID_DIRECTION_DIRECT) ? 1 : -1);
+	float sign = ((config.direction == PID_DIRECTION_DIRECT) ? 1.0f : -1.0f);
 	Kp =  sign * config.Kp;
 	Ki_ = sign * config.Ki * sample_time;
 	Kd_ = sign * config.Kd / sample_time;
@@ -37,12 +36,12 @@ void PID_Init(PID_Config c)
 	);
 }
 
-float PID_Compute(uint32_t time, float input)
+float PID_Compute(float input)
 {
-	return PID_ComputeCustomSetpoint(time, input, config.setpoint);
+	return PID_ComputeCustomSetpoint(input, config.setpoint);
 }
 
-float PID_ComputeCustomSetpoint(uint32_t time, float input, float setpoint)
+float PID_ComputeCustomSetpoint(float input, float setpoint)
 {
 	static float e_sum = 0;
 	static float e_last = 0;
@@ -53,14 +52,13 @@ float PID_ComputeCustomSetpoint(uint32_t time, float input, float setpoint)
 
 	float p = Kp * e;
 	float i = Ki_ * e_sum;
-	float d = Kd_ * (e - e_last) * (last_compute_time > 0);
+	float d = Kd_ * (e - e_last);
 	float pid = p + i + d;
+
+	e_last = e;
 
 	if (config.limit_output)
 		pid = rangef(pid, config.output_limits.min, config.output_limits.max);
-
-	e_last = e;
-	last_compute_time = time;
 
 	return pid;
 }

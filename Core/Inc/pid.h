@@ -23,7 +23,7 @@ typedef struct PID_Config {
 } PID_Config;
 
 void PID_Init(PID_Config config);
-float PID_Compute(uint32_t time, float input);
-float PID_ComputeCustomSetpoint(uint32_t time, float input, float setpoint);
+float PID_Compute(float input);
+float PID_ComputeCustomSetpoint(float input, float setpoint);
 
 #endif /* PID_H */
