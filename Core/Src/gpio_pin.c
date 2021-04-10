@@ -36,12 +36,17 @@ void GPIO_Pin_Low(GPIO_Pin pin)
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_RESET);
 }
 
-void GPIO_Pin_Set(GPIO_Pin pin, bool high)
+void GPIO_Pin_Write(GPIO_Pin pin, bool high)
 {
 	if (high)
 		GPIO_Pin_High(pin);
 	else
 		GPIO_Pin_Low(pin);
+}
+
+bool GPIO_Pin_Read(GPIO_Pin pin)
+{
+	return HAL_GPIO_ReadPin(pin.port, pin.pin) == GPIO_PIN_SET;
 }
 
 static const char * GPIO_Pin_PortToString(GPIO_TypeDef *port)
