@@ -7,7 +7,7 @@
  * #define VERBOSE_FMT(fmt) "{MODULE_NAME} " fmt
  */
 
-// Global DEBUG setting, set to 0 in production
+// Global VERBOSE setting, set to 0 in production
 #ifndef VERBOSE
 #define VERBOSE 0
 #endif
