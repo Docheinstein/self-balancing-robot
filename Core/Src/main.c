@@ -95,7 +95,7 @@ typedef enum {
 #define DEG_GIVEUP   40.0f
 
 
-#define PRINT_STEP_RESPONSE 1
+#define PRINT_STEP_RESPONSE 0
 #define SIMULATION false
 
 /* USER CODE END PD */
@@ -834,14 +834,6 @@ static void printRobotParameters() {
 	);
 }
 
-static void setLeds(bool l1, bool l2)
-{
-	verboseln("LED1: %s | LED2: %s", l1 ? "on" : "off", l2 ? "on" : "off");
-	GPIO_Pin_Write(led1, l1);
-	GPIO_Pin_Write(led2, l2);
-}
-
-
 static void handleSensorsMeasurement(dim3_f xl, dim3_f g)
 {
 	verboseln("Accelerometer: (x=%f, y=%f, z=%f)g", xl.x, xl.y, xl.z);
@@ -909,24 +901,33 @@ void StartPrimaryTask(void *argument)
 
 	uint32_t flags;
 
+	GPIO_Pin_High(led1);
+	GPIO_Pin_Low(led2);
+
 	// Do not start immediately.
 	// Wait for either the start or the tuning event.
 	do {
 		verboseln("Waiting for event...");
-		setLeds(true, false);
+		GPIO_Pin_Toggle(led1);
+		GPIO_Pin_Toggle(led2);
 
 		flags = osEventFlagsWait(
 			robotEventHandle,
 			ROBOT_EVENT_START | ROBOT_EVENT_TUNING,
-			osFlagsWaitAny, osWaitForever
+			osFlagsWaitAny, 1000
 		);
+		if (flags & osFlagsError)
+			continue;
+
 		if (flags & ROBOT_EVENT_TUNING) {
-			setLeds(true, true);
+			GPIO_Pin_High(led1);
+			GPIO_Pin_High(led2);
 			tuningOverSerial();
 		}
 	} while (!(flags & ROBOT_EVENT_START));
 
-	setLeds(false, false);
+	GPIO_Pin_Low(led1);
+	GPIO_Pin_Low(led2);
 
 	// Actually start the robot main loop
 
