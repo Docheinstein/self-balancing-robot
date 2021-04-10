@@ -98,8 +98,8 @@ static void L298N_MotorSetSpeed(L298N_MotorConfig motor, float percentage)
 static void L298N_MotorSetDirection(
 		L298N_MotorConfig motor, bool dir_1_high, bool dir_2_high)
 {
-	GPIO_Pin_Set(motor.direction_1, dir_1_high);
-	GPIO_Pin_Set(motor.direction_2, dir_2_high);
+	GPIO_Pin_Write(motor.direction_1, dir_1_high);
+	GPIO_Pin_Write(motor.direction_2, dir_2_high);
 }
 
 static void L298N_MotorForward(L298N_MotorConfig motor, float percentage)

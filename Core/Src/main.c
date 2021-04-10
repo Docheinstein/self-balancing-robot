@@ -44,6 +44,10 @@ typedef StaticSemaphore_t osStaticMutexDef_t;
 typedef StaticEventGroup_t osStaticEventGroupDef_t;
 /* USER CODE BEGIN PTD */
 
+typedef enum {
+	FILTER_TYPE_COMPLEMENTARY,
+	FILTER_TYPE_MADGWICK
+} FilterType;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -53,21 +57,13 @@ typedef StaticEventGroup_t osStaticEventGroupDef_t;
 
 #define LSM6DSL_EVENT_DATA_READY	BIT(0)
 #define ROBOT_EVENT_START			BIT(0)
-
-// === MODALITIES ===
-
-#define TUNING_OVER_SERIAL 1
-#define PRINT_STEP_RESPONSE 1
-#define PRINT_GYRO_X 0
-#define PRINT_GYRO_Y 0
-#define PRINT_GYRO_Z 0
-#define SIMULATION 0
+#define ROBOT_EVENT_TUNING			BIT(1)
 
 // === TUNING PARAMETERS ===
 
 // These two must be consistent each other
 #define LSM6DSL_FREQ LSM6DSL_104_HZ
-#define SAMPLE_RATE 104.0f
+#define SAMPLE_RATE          104.0f
 
 #define GYRO_OFFSET_X  0.41530f
 #define GYRO_OFFSET_Y -1.04329f
@@ -77,28 +73,31 @@ typedef StaticEventGroup_t osStaticEventGroupDef_t;
 #define ACCEL_OFFSET_Y 0.0f
 #define ACCEL_OFFSET_Z 0.0f
 
-#define COMPLEMENTARY_FILTER_TIME_CONSTANT 3.0f
-#define MADGWICK_FILTER_BETA 0.1f
+#define FILTER_TYPE FILTER_TYPE_COMPLEMENTARY
 
-#define PID_KP  10.0f
-#define PID_KI 22.0f
+#define COMPLEMENTARY_FILTER_TAU 3.00f
+#define MADGWICK_FILTER_BETA     0.05f
+
+#define PID_KP 11.2f
+#define PID_KI 38.0f
 #define PID_KD  0.6f
 
 #define MOTOR_DUTY_CYCLE_MIN   0.0f
 #define MOTOR_DUTY_CYCLE_MAX 100.0f
 
-#define SETPOINT_DEG  0.0f
-#define GIVE_UP_DEG  40.0f
-
-#define FORWARD_SPEED_FACTOR  1.00f
-//#define BACKWARD_SPEED_FACTOR 0.96f
-#define BACKWARD_SPEED_FACTOR 1.00f
-
-//#define MOTOR_A_SPEED_FACTOR 1.12f
 #define MOTOR_A_SPEED_FACTOR 1.06f
 #define MOTOR_B_SPEED_FACTOR 1.00f
 
-#define USE_MADGWICK_FILTER false
+#define MOTORS_FORWARD_SPEED_FACTOR  1.00f
+#define MOTORS_BACKWARD_SPEED_FACTOR 1.00f
+
+#define DEG_SETPOINT  0.0f
+#define DEG_GIVEUP   40.0f
+
+
+#define PRINT_STEP_RESPONSE 1
+#define SIMULATION false
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -167,19 +166,24 @@ const osEventFlagsAttr_t robotEvent_attributes = {
 static GPIO_Pin led1 = { .port = LED_1_GPIO_Port, .pin = LED_1_Pin };
 static GPIO_Pin led2 = { .port = LED_2_GPIO_Port, .pin = LED_2_Pin };
 
+// Copy the default values into variables since these
+// could be modified while in tuning mode over serial
+static FilterType filter_type = FILTER_TYPE;
+static float tau = COMPLEMENTARY_FILTER_TAU;
+static float beta = MADGWICK_FILTER_BETA;
 static float kp = PID_KP;
 static float ki = PID_KI;
 static float kd = PID_KD;
-static float tau = COMPLEMENTARY_FILTER_TIME_CONSTANT;
-static float beta = MADGWICK_FILTER_BETA;
 static float pwm_min = MOTOR_DUTY_CYCLE_MIN;
 static float pwm_max = MOTOR_DUTY_CYCLE_MAX;
-static float setpoint = SETPOINT_DEG;
-static float giveup = GIVE_UP_DEG;
-static float forward_factor = FORWARD_SPEED_FACTOR;
-static float backward_factor = BACKWARD_SPEED_FACTOR;
-static bool use_madgwick = USE_MADGWICK_FILTER;
+static float forward_factor = MOTORS_FORWARD_SPEED_FACTOR;
+static float backward_factor = MOTORS_BACKWARD_SPEED_FACTOR;
+static float a_factor = MOTOR_A_SPEED_FACTOR;
+static float b_factor = MOTOR_B_SPEED_FACTOR;
+static float setpoint = DEG_SETPOINT;
+static float giveup = DEG_GIVEUP;
 static bool simulation = SIMULATION;
+static bool print_step_response = PRINT_STEP_RESPONSE;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -234,7 +238,12 @@ int main(void)
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   Serial_Init(&huart1);
-  initializeRobot();
+  println(
+	  "======= SELF BALANCING ROBOT =======" SERIAL_ENDL
+	  "Build date: " __DATE__ " " __TIME__ SERIAL_ENDL
+	  "===================================="
+  );
+
   verboseln("Starting FreeRTOS kernel...");
   /* USER CODE END 2 */
 
@@ -413,9 +422,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 2;
+  htim3.Init.Prescaler = 3;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 53332;
+  htim3.Init.Period = 49999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -513,13 +522,11 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIO_Low_GPIO_Port, GPIO_Low_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|LED_1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|Motor_B_Direction_1_Pin
+                          |LED_1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_2_GPIO_Port, LED_2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Motor_B_Direction_1_GPIO_Port, Motor_B_Direction_1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : Button_Blue_Pin */
   GPIO_InitStruct.Pin = Button_Blue_Pin;
@@ -534,8 +541,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Motor_A_Direction_2_Pin Motor_A_Direction_1_Pin Motor_B_Direction_2_Pin LED_1_Pin */
-  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|LED_1_Pin;
+  /*Configure GPIO pins : Motor_A_Direction_2_Pin Motor_A_Direction_1_Pin Motor_B_Direction_2_Pin Motor_B_Direction_1_Pin
+                           LED_1_Pin */
+  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|Motor_B_Direction_1_Pin
+                          |LED_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -554,12 +563,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(LSM6DSL_INT_1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : Motor_B_Direction_1_Pin */
-  GPIO_InitStruct.Pin = Motor_B_Direction_1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Motor_B_Direction_1_GPIO_Port, &GPIO_InitStruct);
+  /*Configure GPIO pin : Button_External_1_Pin */
+  GPIO_InitStruct.Pin = Button_External_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(Button_External_1_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 10, 0);
@@ -584,202 +592,26 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
 	if (pin == LSM6DSL_INT_1_Pin) {
 		verboseln("Received LSM6DSL data-ready signal");
 		osEventFlagsSet(lsm6dslEventHandle, LSM6DSL_EVENT_DATA_READY);
-	}
-	if (pin == Button_Blue_Pin) {
-		verboseln("Button has been pressed");
+	} else if (pin == Button_Blue_Pin) {
+		verboseln("Button has been pressed (internal)");
 		osEventFlagsSet(robotEventHandle, ROBOT_EVENT_START);
+	} else if (pin == Button_External_1_Pin) {
+		verboseln("Button has been pressed (external)");
+		osEventFlagsSet(robotEventHandle, ROBOT_EVENT_TUNING);
 	}
-
 }
 
-static void handleSensorsData(uint32_t time, dim3_f xl, dim3_f g)
+static void initializeSensors()
 {
-	verboseln("Accelerometer: (x=%f, y=%f, z=%f)g", xl.x, xl.y, xl.z);
-	verboseln("Gyroscope:     (x=%f, y=%f, z=%f)dps", g.x, g.y, g.z);
-
-#if PRINT_GYRO_X
-	println("%f", g.x);
-#endif
-
-#if PRINT_GYRO_Y
-	println("%f", g.y);
-#endif
-
-#if PRINT_GYRO_Z
-	println("%f", g.z);
-#endif
-
-	// Apply adjustments to sensors measurements
-	xl.x -= ACCEL_OFFSET_X;
-	xl.y -= ACCEL_OFFSET_Y;
-	xl.z -= ACCEL_OFFSET_Z;
-	g.x -= GYRO_OFFSET_X;
-	g.y -= GYRO_OFFSET_Y;
-	g.z -= GYRO_OFFSET_Z;
-
-	// Estimate the angle using measures from both sensors with a filter
-	float input;
-	if (use_madgwick)
-		MadgwickFilter_Compute(xl, g, &input, NULL, NULL);
-	else
-		ComplementaryFilter_Compute(xl, g, &input, NULL, NULL);
-
-	if (ABS(input) > giveup) {
-		L298N_Stop(L298N_MOTOR_BOTH);
-		return; // no change of balance
-	}
-
-	// Compute the motor's output using a PID
-	float output = PID_Compute(time, input);
-
-	// Eventually increase the speed depending on the direction
-	bool go_forward = output < 0;
-	float direction_speed_factor = go_forward ? forward_factor : backward_factor;
-	output = output * direction_speed_factor;
-
-	// Eventually remap output to the range [pwm_min, pwm_max]
-	float duty_cycle = mapf(
-		rangef(ABS(output), 0.0f, 100.0f),
-		0.0f, 100.0f,
-		pwm_min, pwm_max
-	);
-
-	if (!simulation) {
-		if (go_forward)
-			L298N_Forward(L298N_MOTOR_BOTH, duty_cycle);
-		else
-			L298N_Backward(L298N_MOTOR_BOTH, duty_cycle);
-	}
-
-
-#if PRINT_STEP_RESPONSE
-	println("%u %f %f", time, input, copysignf(duty_cycle, output));
-#endif
-}
-
-
-static void tuningOverSerial()
-{
-	println("==== TUNING ON SERIAL ====");
-	println("Type h for help...");
-
-	static const char *HELP =
-		"<ENTER> : print parameters; twice to end tuning" SERIAL_ENDL
-		"h       : help" SERIAL_ENDL
-		"z       : simulation mode" SERIAL_ENDL
-		".       : toggle filter" SERIAL_ENDL
-		"p<VALUE>: PID_KP" SERIAL_ENDL
-		"d<VALUE>: PID_KD" SERIAL_ENDL
-		"i<VALUE>: PID_KI" SERIAL_ENDL
-		"t<VALUE>: COMPLEMENTARY_FILTER_TAU" SERIAL_ENDL
-		"b<VALUE>: MADGWICK_FILTER_BETA" SERIAL_ENDL
-		"o<VALUE>: PWM_MIN" SERIAL_ENDL
-		"c<VALUE>: SETPOINT" SERIAL_ENDL
-		"F<VALUE>: MOTOR_FORWARD_FACTOR" SERIAL_ENDL
-		"B<VALUE>: MOTOR_BACKWARD_FACTOR" SERIAL_ENDL
-		"+<VALUE>: manually forward motor" SERIAL_ENDL
-		"-<VALUE>: manually backward motor" SERIAL_ENDL
-		"0       : manually stop motors"
-	;
-
-	bool just_print = false;
-	bool exit = false;
-	char data[16];
-	while (!exit) {
-		printf("$ ");
-		Serial_ReadStringCR(data, 16);
-
-		char cmd = '\0';
-		char *args = NULL;
-		size_t len = strlen(data);
-		if (len > 0) {
-			cmd = data[0];
-			if (len > 1)
-				args = &data[1];
-		}
-
-		// Tuning options
-		switch (cmd) {
-		case 'p': kp = strtof(args, NULL); break;
-		case 'd': kd = strtof(args, NULL); break;
-		case 'i': ki = strtof(args, NULL); break;
-		case 't': tau = strtof(args, NULL); break;
-		case 'b': beta = strtof(args, NULL); break;
-		case 'o': pwm_min = strtof(args, NULL); break;
-		case 'c': setpoint = strtof(args, NULL); break;
-		case 'F': forward_factor = strtof(args, NULL); break;
-		case 'B': backward_factor = strtof(args, NULL); break;
-		case '+': L298N_Forward(L298N_MOTOR_BOTH, strtof(args, NULL)); break;
-		case '-': L298N_Backward(L298N_MOTOR_BOTH, strtof(args, NULL)); break;
-		case '0': L298N_Stop(L298N_MOTOR_BOTH); break;
-		case '.': use_madgwick = !use_madgwick; break;
-		case 'z': simulation = true; break;
-		case 'h': println("%s", HELP); break;
-		case '\0':
-			if (just_print)
-				exit = true;
-			else
-				printRobotParameters();
-			break;
-		default:
-			println("ERROR: %s", data);
-		}
-
-		just_print = cmd == '\0';
-	}
-
-	println("==== TUNING ON SERIAL FINISHED ====");
-}
-
-static void printRobotParameters() {
-	println(
-		"# F         = %f Hz" SERIAL_ENDL
-		"# tau       = %f s"SERIAL_ENDL
-		"# alpha     = %f"SERIAL_ENDL
-		"# beta      = %f"SERIAL_ENDL
-		"# Kp        = %f"SERIAL_ENDL
-		"# Ki        = %f" SERIAL_ENDL
-		"# Kd        = %f" SERIAL_ENDL
-		"# pwm_min   = %f %%" SERIAL_ENDL
-		"# pwm_max   = %f %%" SERIAL_ENDL
-		"# setpoint  = %f deg" SERIAL_ENDL
-		"# giveup    = %f deg" SERIAL_ENDL
-		"# x fwd     = %f" SERIAL_ENDL
-		"# x bwd     = %f " SERIAL_ENDL
-		"# x A       = %f " SERIAL_ENDL
-		"# x B       = %f " SERIAL_ENDL
-		"# madgwick  = %s " SERIAL_ENDL
-		"# simul.    = %s",
-		SAMPLE_RATE,
-		tau,
-		COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
-		beta,
-		kp, ki, kd,
-		pwm_min, pwm_max,
-		setpoint,
-		giveup,
-		forward_factor,
-		backward_factor,
-		MOTOR_A_SPEED_FACTOR,
-		MOTOR_B_SPEED_FACTOR,
-		BOOL_TO_STR(use_madgwick),
-		BOOL_TO_STR(simulation)
-	);
-}
-
-static void initializeRobot()
-{
-	verboseln("=============================");
-	verboseln("Peripherals initialization...");
-
-	// LSM6DSL (accelerometer + gyroscope)
 	LSM6DSL_Init(&hi2c2);
 
 	LSM6DSL_EnableAccelerometer(LSM6DSL_FREQ, LSM6DSL_FS_XL_2_G);
 	LSM6DSL_EnableGyroscope(LSM6DSL_FREQ, LSM6DSL_FS_G_250_DPS);
 	LSM6DSL_SetGyroscopeInterrupt(LSM6DSL_INT_1);
+}
 
-	// L298N (motors driver)
+static void initializeMotors()
+{
 	L298N_Config l298n_config = {
 		.motor_a = {
 			.inverted = true, // depends on the wiring
@@ -798,7 +630,7 @@ static void initializeRobot()
 					.channel = TIM_CHANNEL_3,
 				}
 			},
-			.speed_factor = MOTOR_A_SPEED_FACTOR
+			.speed_factor = a_factor
 		},
 		.motor_b = {
 			.inverted = false, // depends on the wiring
@@ -817,28 +649,34 @@ static void initializeRobot()
 					.channel = TIM_CHANNEL_4,
 				}
 			},
-			.speed_factor = MOTOR_B_SPEED_FACTOR
+			.speed_factor = b_factor
 		},
 	};
 
 	L298N_Init(l298n_config);
+}
 
-	// Filters
-	ComplementaryFilter_Config compl_filter_config = {
-		.alpha = COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
-		.sample_rate = SAMPLE_RATE
-	};
+static void initializeFilter()
+{
+	if (filter_type == FILTER_TYPE_COMPLEMENTARY) {
+		ComplementaryFilter_Config compl_filter_config = {
+			.alpha = COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
+			.sample_rate = SAMPLE_RATE
+		};
 
-	ComplementaryFilter_Init(compl_filter_config);
+		ComplementaryFilter_Init(compl_filter_config);
+	} else {
+		MadgwickFilter_Config madgwick_filter_config = {
+			.beta = beta,
+			.sample_rate = SAMPLE_RATE
+		};
 
-	MadgwickFilter_Config madgwick_filter_config = {
-		.beta = beta,
-		.sample_rate = SAMPLE_RATE
-	};
+		MadgwickFilter_Init(madgwick_filter_config);
+	}
+}
 
-	MadgwickFilter_Init(madgwick_filter_config);
-
-	// PID
+static void initializePID()
+{
 	PID_Config pid_config = {
 		.Kp = kp,
 		.Ki = ki,
@@ -850,6 +688,210 @@ static void initializeRobot()
 	};
 
 	PID_Init(pid_config);
+}
+
+static void initializeRobot()
+{
+	verboseln("=============================");
+	verboseln("Robot initialization...");
+	initializeSensors();
+	initializeMotors();
+	initializeFilter();
+	initializePID();
+	verboseln("=============================");
+}
+
+static void tuningOverSerial()
+{
+	println("========== TUNING ==========");
+	println("Type h for help...");
+
+	static const char *HELP =
+		"<ENTER> : print parameters; twice to end tuning" SERIAL_ENDL
+		"h       : help" SERIAL_ENDL
+		"+<VALUE>: manually forward motor" SERIAL_ENDL
+		"-<VALUE>: manually backward motor" SERIAL_ENDL
+		"0       : manually stop motors" SERIAL_ENDL
+		".       : FILTER_TYPE (toggle)" SERIAL_ENDL
+		"t<VALUE>: COMPLEMENTARY_FILTER_TAU" SERIAL_ENDL
+		"b<VALUE>: MADGWICK_FILTER_BETA" SERIAL_ENDL
+		"p<VALUE>: PID_KP" SERIAL_ENDL
+		"d<VALUE>: PID_KD" SERIAL_ENDL
+		"i<VALUE>: PID_KI" SERIAL_ENDL
+		"o<VALUE>: MOTOR_DUTY_CYCLE_MIN" SERIAL_ENDL
+		"O<VALUE>: MOTOR_DUTY_CYCLE_MAX" SERIAL_ENDL
+		"><VALUE>: MOTORS_FORWARD_SPEED_FACTOR" SERIAL_ENDL
+		"<<VALUE>: MOTORS_BACKWARD_SPEED_FACTOR" SERIAL_ENDL
+		"A<VALUE>: MOTOR_A_SPEED_FACTOR" SERIAL_ENDL
+		"B<VALUE>: MOTOR_B_SPEED_FACTOR" SERIAL_ENDL
+		"c<VALUE>: SETPOINT" SERIAL_ENDL
+		"z       : SIMULATION_MODE (toggle)" SERIAL_ENDL
+		"s       : PRINT_STEP_RESPONSE (toggle)"
+	;
+
+	bool already_printed = false;
+	bool exit = false;
+	char data[16];
+	while (!exit) {
+		printf("$ ");
+		Serial_ReadStringCR(data, 16);
+
+		char cmd = '\0';
+		float arg = 0;
+		size_t len = strlen(data);
+		if (len > 0) {
+			cmd = data[0];
+			if (len > 1)
+				arg = strtof(&data[1], NULL);
+		}
+
+		// Tuning options
+		switch (cmd) {
+		case '+':
+			initializeMotors();
+			L298N_Forward(L298N_MOTOR_BOTH, arg);
+			break;
+		case '-':
+			initializeMotors();
+			L298N_Backward(L298N_MOTOR_BOTH, arg);
+			break;
+		case '0':
+			L298N_Stop(L298N_MOTOR_BOTH);
+			break;
+		case 'f': filter_type = filter_type == FILTER_TYPE_COMPLEMENTARY ?
+					FILTER_TYPE_MADGWICK : FILTER_TYPE_COMPLEMENTARY; break;
+		case 't': tau = arg; break;
+		case 'b': beta = arg; break;
+		case 'p': kp = arg; break;
+		case 'd': kd = arg; break;
+		case 'i': ki = arg; break;
+		case 'm': pwm_min = arg; break;
+		case 'M': pwm_max = arg; break;
+		case '>': forward_factor = arg; break;
+		case '<': backward_factor = arg; break;
+		case 'A': a_factor = arg; break;
+		case 'B': b_factor = arg; break;
+		case 'c': setpoint = arg; break;
+		case 'z': simulation = !simulation; break;
+		case 's': print_step_response = !print_step_response; break;
+		case 'h': println("%s", HELP); break;
+		case '\0':
+			if (!already_printed)
+				printRobotParameters();
+			else
+				exit = true;
+			break;
+		default:
+			println("ERROR: %s", data);
+		}
+
+		already_printed = cmd == '\0';
+	}
+
+	println("===== TUNING FINISHED =====");
+}
+
+static void printRobotParameters() {
+	println(
+		"# SAMPLE_RATE                  = %f Hz" SERIAL_ENDL
+		"# (SAMPLE_TIME)                = %f s" SERIAL_ENDL
+		"# FILTER_TYPE                  = %s"SERIAL_ENDL
+		"# COMPLEMENTARY_FILTER_TAU     = %f"SERIAL_ENDL
+		"# (COMPLEMENTARY_FILTER_ALPHA) = %f"SERIAL_ENDL
+		"# MADGWICK_FILTER_BETA         = %f"SERIAL_ENDL
+		"# PID_KP                       = %f"SERIAL_ENDL
+		"# PID_KI                       = %f"SERIAL_ENDL
+		"# PID_KD                       = %f"SERIAL_ENDL
+		"# MOTOR_DUTY_CYCLE_MIN         = %f %%" SERIAL_ENDL
+		"# MOTOR_DUTY_CYCLE_MAX         = %f %%" SERIAL_ENDL
+		"# MOTORS_FORWARD_SPEED_FACTOR  = %f"SERIAL_ENDL
+		"# MOTORS_BACKWARD_SPEED_FACTOR = %f"SERIAL_ENDL
+		"# MOTOR_A_SPEED_FACTOR         = %f"SERIAL_ENDL
+		"# MOTOR_B_SPEED_FACTOR         = %f"SERIAL_ENDL
+		"# DEG_SETPOINT                 = %f deg"SERIAL_ENDL
+		"# DEG_GIVUP                    = %f deg"SERIAL_ENDL
+		"# SIMULATION                   = %s"SERIAL_ENDL
+		"# PRINT_STEP_RESPONSE          = %s",
+		SAMPLE_RATE,
+		1 / SAMPLE_RATE,
+		filter_type == FILTER_TYPE_COMPLEMENTARY ? "complementary" :  "madgwick",
+		tau,
+		COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
+		beta,
+		kp,
+		ki,
+		kd,
+		pwm_min,
+		pwm_max,
+		forward_factor,
+		backward_factor,
+		a_factor,
+		b_factor,
+		setpoint,
+		giveup,
+		BOOL_TO_STR(simulation),
+		BOOL_TO_STR(print_step_response)
+	);
+}
+
+static void setLeds(bool l1, bool l2)
+{
+	verboseln("LED1: %s | LED2: %s", l1 ? "on" : "off", l2 ? "on" : "off");
+	GPIO_Pin_Write(led1, l1);
+	GPIO_Pin_Write(led2, l2);
+}
+
+
+static void handleSensorsMeasurement(dim3_f xl, dim3_f g)
+{
+	verboseln("Accelerometer: (x=%f, y=%f, z=%f)g", xl.x, xl.y, xl.z);
+	verboseln("Gyroscope:     (x=%f, y=%f, z=%f)dps", g.x, g.y, g.z);
+
+	// Apply adjustments to sensors measurements
+	xl.x -= ACCEL_OFFSET_X;
+	xl.y -= ACCEL_OFFSET_Y;
+	xl.z -= ACCEL_OFFSET_Z;
+	g.x -= GYRO_OFFSET_X;
+	g.y -= GYRO_OFFSET_Y;
+	g.z -= GYRO_OFFSET_Z;
+
+	// Estimate the angle using measures from both sensors with a filter
+	float input;
+	if (filter_type == FILTER_TYPE_COMPLEMENTARY)
+		ComplementaryFilter_Compute(xl, g, &input, NULL, NULL);
+	else
+		MadgwickFilter_Compute(xl, g, &input, NULL, NULL);
+
+	// Do not even try to balance if the robot is too much sloped
+	if (ABS(input) > giveup) {
+		L298N_Stop(L298N_MOTOR_BOTH);
+		return;
+	}
+
+	// Compute the motor's output using a PID
+	float output = PID_Compute(input);
+
+	// Eventually increase the speed depending on the direction
+	bool go_forward = (output < 0);
+	output *= go_forward ? forward_factor : backward_factor;
+
+	// Eventually remap output to the range [pwm_min, pwm_max]
+	float duty_cycle = mapf(
+		rangef(ABS(output), 0.0f, 100.0f),
+		0.0f, 100.0f,
+		pwm_min, pwm_max
+	);
+
+	// Actually control the motors
+	if (!simulation) {
+		if (go_forward)
+			L298N_Forward(L298N_MOTOR_BOTH, duty_cycle);
+		else
+			L298N_Backward(L298N_MOTOR_BOTH, duty_cycle);
+	}
+
+	if (print_step_response)
+		println("%u %f %f", HAL_GetTick(), input, copysignf(duty_cycle, output));
 }
 
 /* USER CODE END 4 */
@@ -865,56 +907,68 @@ void StartPrimaryTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
-	GPIO_Pin_High(led1);
+	uint32_t flags;
 
-#if TUNING_OVER_SERIAL
-	tuningOverSerial();
-#endif
+	// Do not start immediately.
+	// Wait for either the start or the tuning event.
+	do {
+		verboseln("Waiting for event...");
+		setLeds(true, false);
 
-	GPIO_Pin_High(led2);
+		flags = osEventFlagsWait(
+			robotEventHandle,
+			ROBOT_EVENT_START | ROBOT_EVENT_TUNING,
+			osFlagsWaitAny, osWaitForever
+		);
+		if (flags & ROBOT_EVENT_TUNING) {
+			setLeds(true, true);
+			tuningOverSerial();
+		}
+	} while (!(flags & ROBOT_EVENT_START));
 
-	// Do not start immediately: wait for the button to be pressed
-	osEventFlagsWait(robotEventHandle, ROBOT_EVENT_START,
-					 osFlagsWaitAll, osWaitForever);
+	setLeds(false, false);
 
-	GPIO_Pin_Low(led1);
-	GPIO_Pin_Low(led2);
+	// Actually start the robot main loop
 
-	printRobotParameters();
 	initializeRobot();
 
-	static const uint32_t DISCARD_FIRST_SAMPLES = 5;
-	uint32_t samples = 0;
+	static const uint32_t DISCARD_INITIAL_SAMPLES = 5;
+	uint64_t samples = 0;
+	uint8_t status;
+	dim3_f xl, g;
+	bool xl_ok, g_ok;
 
-	while (1) {
+	verboseln("==== ROBOT MAIN LOOP ====");
+	while (true) {
 		verboseln("Waiting for LSM6DSL data (time = %u)...", HAL_GetTick());
 		osEventFlagsWait(lsm6dslEventHandle, LSM6DSL_EVENT_DATA_READY,
 						 osFlagsWaitAll, osWaitForever);
 		verboseln("Received LSM6DSL data ready signal (time = %u)", HAL_GetTick());
 
-		uint32_t tick = HAL_GetTick();
 
-		uint8_t status;
-		dim3_f xl, g;
-		bool xl_ok, g_ok;
-
-		if (LSM6DSL_ReadStatus(&status) == HAL_OK) {
-			verboseln("status = 0x%02X", status);
-
-			if (status & LSM6DSL_REG_STATUS_BIT_XLDA)
-				xl_ok = LSM6DSL_ReadAccelerometer_g(&xl) == HAL_OK;
-
-			if (status & LSM6DSL_REG_STATUS_BIT_GDA)
-				g_ok = LSM6DSL_ReadGyroscope_dps(&g) == HAL_OK;
-
-			verboseln("XL = %s | G = %s", BOOL_TO_STR(xl_ok), BOOL_TO_STR(g_ok));
-			if (xl_ok && g_ok) {
-				samples++;
-				if (samples >= DISCARD_FIRST_SAMPLES) {
-					handleSensorsData(tick, xl, g);
-				}
-			}
+		if (!LSM6DSL_ReadStatus(&status) == HAL_OK) {
+			verboseln("Failed to read LSM6DSL status");
+			continue;
 		}
+
+		verboseln("LSM6DSL status = 0x%02X", status);
+
+		// Read the sensors
+		if (status & LSM6DSL_REG_STATUS_BIT_XLDA)
+			xl_ok = LSM6DSL_ReadAccelerometer_g(&xl) == HAL_OK;
+
+		if (status & LSM6DSL_REG_STATUS_BIT_GDA)
+			g_ok = LSM6DSL_ReadGyroscope_dps(&g) == HAL_OK;
+
+		if (!(xl_ok && g_ok))
+			continue;
+
+		if (samples++ < DISCARD_INITIAL_SAMPLES)
+			// the first samples usually have some noise; discard them
+			continue;
+
+		// Handle the sensors measurement
+		handleSensorsMeasurement(xl, g);
 	}
 
   /* USER CODE END 5 */

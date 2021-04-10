@@ -73,6 +73,8 @@ void Error_Handler(void);
 #define Motor_A_Direction_1_GPIO_Port GPIOA
 #define Motor_B_Direction_2_Pin GPIO_PIN_3
 #define Motor_B_Direction_2_GPIO_Port GPIOA
+#define Motor_B_Direction_1_Pin GPIO_PIN_4
+#define Motor_B_Direction_1_GPIO_Port GPIOA
 #define LED_1_Pin GPIO_PIN_5
 #define LED_1_GPIO_Port GPIOA
 #define Motor_A_Speed_PWM_Pin GPIO_PIN_0
@@ -84,8 +86,9 @@ void Error_Handler(void);
 #define LSM6DSL_INT_1_Pin GPIO_PIN_11
 #define LSM6DSL_INT_1_GPIO_Port GPIOD
 #define LSM6DSL_INT_1_EXTI_IRQn EXTI15_10_IRQn
-#define Motor_B_Direction_1_Pin GPIO_PIN_14
-#define Motor_B_Direction_1_GPIO_Port GPIOD
+#define Button_External_1_Pin GPIO_PIN_14
+#define Button_External_1_GPIO_Port GPIOD
+#define Button_External_1_EXTI_IRQn EXTI15_10_IRQn
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
