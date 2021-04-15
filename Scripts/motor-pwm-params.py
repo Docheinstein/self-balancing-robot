@@ -15,7 +15,7 @@ Fmotor = --------------------------
 
 
 def compute_params(clock_freq, motor_freq,
-                   arr_min=256, proposals_max=10):
+                   arr_min=0, proposals_max=10):
     UINT16_MAX = 2**16 - 1
     ARR_MIN = 32
     
