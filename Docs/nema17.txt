@@ -1,0 +1,20 @@
+Electrical Specification:
+
+Product type:Bipolar 42 Stepper Motor
+Step Angle: 1.8 deg. 
+Rated Current/phase: 1.5A
+Holding Torque:42N.cm (60oz.in)
+
+General Specification:
+
+Step angle accuracy: + - 5%(full step,not load)
+# pwm_max = 100.000000 %
+Resistance accuracy: + - 10%
+Inductance accuracy: + - 20%
+Temperature rise: 80deg Max(rated current,2 phase on)
+Ambient temperature ----------20deg ~+50deg
+Insulation resistance:100M Min,500VDC
+Insultion Strength--------500VAC for one minute.
+
+
+200 steps/revolution
