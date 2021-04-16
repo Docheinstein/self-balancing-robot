@@ -1,4 +1,5 @@
 import argparse
+from math import ceil
 
 """
                     Fclock
@@ -15,21 +16,22 @@ Fmotor = --------------------------
 
 
 def compute_params(clock_freq, motor_freq,
-                   arr_min=0, proposals_max=10):
+                   proposals_max=10):
     UINT16_MAX = 2**16 - 1
-    ARR_MIN = 32
     
     proposals = 0
     print("-" * 54)
     print(f"Fclock = {clock_freq}")
     print("-" * 54)
-    print("Fmotor (Hz)".ljust(12) + " | " + "Tmotor (ms)".ljust(12) + " | " + "PSC".ljust(12) + " | " + "ARR".ljust(12))
+    print("Fmotor (Hz)".ljust(12) + " | " + "Tmotor (ms)".ljust(12) + 
+            " | " + "PSC".ljust(12) + " | " + "ARR".ljust(12))
     print("-" * 54)
     
+    clock_freq = float(clock_freq)
+
     for psc in range(0, UINT16_MAX + 1):
-        arr = int((clock_freq / (motor_freq * (psc + 1))) - 1)
-        
-        if arr_min <= arr <= UINT16_MAX:
+        arr = ceil((clock_freq / (motor_freq * (psc + 1))) - 1)
+        if arr <= UINT16_MAX:
             motor_freq_real = clock_freq / ((psc + 1) * (arr + 1))
             period_real = 1000 / motor_freq_real
             print(f"{motor_freq_real:.2f}".ljust(12) + " | " +
