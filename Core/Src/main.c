@@ -31,11 +31,10 @@
 #include "serial.h"
 #include "std.h"
 #include "lsm6dsl.h"
-#include "l298n.h"
 #include "pid.h"
 #include "complementary_filter.h"
-#include "madgwick_filter.h"
 #include "gpio_pin.h"
+#include "a4988.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,10 +43,6 @@ typedef StaticSemaphore_t osStaticMutexDef_t;
 typedef StaticEventGroup_t osStaticEventGroupDef_t;
 /* USER CODE BEGIN PTD */
 
-typedef enum {
-	FILTER_TYPE_COMPLEMENTARY,
-	FILTER_TYPE_MADGWICK
-} FilterType;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -56,14 +51,20 @@ typedef enum {
 #define VERBOSE_FMT(fmt) "{MAIN} " fmt
 
 #define LSM6DSL_EVENT_DATA_READY	BIT(0)
+
 #define ROBOT_EVENT_START			BIT(0)
 #define ROBOT_EVENT_TUNING			BIT(1)
+#define ROBOT_EVENT_OTHER			BIT(2)
 
-// === TUNING PARAMETERS ===
+// === NON TUNABLE PARAMETERS ===
 
 // These two must be consistent each other
-#define LSM6DSL_FREQ LSM6DSL_104_HZ
-#define SAMPLE_RATE          104.0f
+//#define LSM6DSL_FREQ LSM6DSL_104_HZ
+//#define SAMPLE_RATE          104.0f
+#define LSM6DSL_FREQ LSM6DSL_12_HZ
+#define SAMPLE_RATE          12.0f
+
+#define BUTTON_DEBOUNCE_MS 150
 
 #define GYRO_OFFSET_X  0.41530f
 #define GYRO_OFFSET_Y -1.04329f
@@ -73,30 +74,24 @@ typedef enum {
 #define ACCEL_OFFSET_Y 0.0f
 #define ACCEL_OFFSET_Z 0.0f
 
-#define FILTER_TYPE FILTER_TYPE_COMPLEMENTARY
+#define GIVEUP_DEG   40.0f
+
+#define NEMA_17_STEPS_PER_REV 200
+
+
+// === TUNABLE PARAMETERS ===
 
 #define COMPLEMENTARY_FILTER_TAU 3.00f
-#define MADGWICK_FILTER_BETA     0.05f
 
-#define PID_KP 11.2f
-#define PID_KI 38.0f
-#define PID_KD  0.6f
+#define PID_KP  1.0f
+#define PID_KI  0.0f
+#define PID_KD  0.0f
 
-#define MOTOR_DUTY_CYCLE_MIN   0.0f
-#define MOTOR_DUTY_CYCLE_MAX 100.0f
+#define SETPOINT_DEG  0.0f
 
-#define MOTOR_A_SPEED_FACTOR 1.06f
-#define MOTOR_B_SPEED_FACTOR 1.00f
-
-#define MOTORS_FORWARD_SPEED_FACTOR  1.00f
-#define MOTORS_BACKWARD_SPEED_FACTOR 1.00f
-
-#define DEG_SETPOINT  0.0f
-#define DEG_GIVEUP   40.0f
-
-
-#define PRINT_STEP_RESPONSE 0
 #define SIMULATION false
+#define PRINT_STEP_RESPONSE 0
+
 
 /* USER CODE END PD */
 
@@ -104,7 +99,6 @@ typedef enum {
 /* USER CODE BEGIN PM */
 #define COMPLEMENTARY_FILTER_ALPHA(tau, rate) \
 	((float) tau / (tau + ((float) 1 / rate)))
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -125,18 +119,6 @@ const osThreadAttr_t primaryTask_attributes = {
   .stack_mem = &primaryTaskBuffer[0],
   .stack_size = sizeof(primaryTaskBuffer),
   .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for secondaryTask */
-osThreadId_t secondaryTaskHandle;
-uint32_t secondaryTaskBuffer[ 256 ];
-osStaticThreadDef_t secondaryTaskControlBlock;
-const osThreadAttr_t secondaryTask_attributes = {
-  .name = "secondaryTask",
-  .cb_mem = &secondaryTaskControlBlock,
-  .cb_size = sizeof(secondaryTaskControlBlock),
-  .stack_mem = &secondaryTaskBuffer[0],
-  .stack_size = sizeof(secondaryTaskBuffer),
-  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for robotStateMutex */
 osMutexId_t robotStateMutexHandle;
@@ -166,22 +148,24 @@ const osEventFlagsAttr_t robotEvent_attributes = {
 static GPIO_Pin led1 = { .port = LED_1_GPIO_Port, .pin = LED_1_Pin };
 static GPIO_Pin led2 = { .port = LED_2_GPIO_Port, .pin = LED_2_Pin };
 
+static A4988 a4988_a;
+static A4988 a4988_b;
+static PID pid;
+static ComplementaryFilter filter;
+
+//static GPIO_Pin motor_a_step = { .port = Motor_A_STEP_GPIO_Port, .pin = Motor_A_STEP_Pin };
+static PWM_Pin motor_a_step = { .tim = &htim3, .channel = TIM_CHANNEL_3 };
+static GPIO_Pin motor_a_dir = { .port = Motor_A_DIR_GPIO_Port, .pin = Motor_A_DIR_Pin };
+static GPIO_Pin motor_a_sleep = { .port = Motor_A_SLP_GPIO_Port, .pin = Motor_A_SLP_Pin };
+
+
 // Copy the default values into variables since these
 // could be modified while in tuning mode over serial
-static FilterType filter_type = FILTER_TYPE;
 static float tau = COMPLEMENTARY_FILTER_TAU;
-static float beta = MADGWICK_FILTER_BETA;
 static float kp = PID_KP;
 static float ki = PID_KI;
 static float kd = PID_KD;
-static float pwm_min = MOTOR_DUTY_CYCLE_MIN;
-static float pwm_max = MOTOR_DUTY_CYCLE_MAX;
-static float forward_factor = MOTORS_FORWARD_SPEED_FACTOR;
-static float backward_factor = MOTORS_BACKWARD_SPEED_FACTOR;
-static float a_factor = MOTOR_A_SPEED_FACTOR;
-static float b_factor = MOTOR_B_SPEED_FACTOR;
-static float setpoint = DEG_SETPOINT;
-static float giveup = DEG_GIVEUP;
+static float setpoint = SETPOINT_DEG;
 static bool simulation = SIMULATION;
 static bool print_step_response = PRINT_STEP_RESPONSE;
 /* USER CODE END PV */
@@ -193,7 +177,6 @@ static void MX_USART1_UART_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_TIM3_Init(void);
 void StartPrimaryTask(void *argument);
-void StartSecondaryTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 static void printRobotParameters();
@@ -268,9 +251,6 @@ int main(void)
   /* Create the thread(s) */
   /* creation of primaryTask */
   primaryTaskHandle = osThreadNew(StartPrimaryTask, NULL, &primaryTask_attributes);
-
-  /* creation of secondaryTask */
-  secondaryTaskHandle = osThreadNew(StartSecondaryTask, NULL, &secondaryTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -422,9 +402,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 3;
+  htim3.Init.Prescaler = 366;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 49999;
+  htim3.Init.Period = 65395;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -447,14 +427,10 @@ static void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
+  sConfigOC.Pulse = 32760;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
   {
     Error_Handler();
   }
@@ -516,14 +492,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIO_High_GPIO_Port, GPIO_High_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIO_Low_GPIO_Port, GPIO_Low_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|Motor_B_Direction_1_Pin
-                          |LED_1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, Motor_A_SLP_Pin|Motor_A_DIR_Pin|Motor_A_STEP_GPIO_Pin|LED_1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_2_GPIO_Port, LED_2_Pin, GPIO_PIN_RESET);
@@ -534,17 +503,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Button_Blue_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : GPIO_High_Pin GPIO_Low_Pin */
-  GPIO_InitStruct.Pin = GPIO_High_Pin|GPIO_Low_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : Motor_A_Direction_2_Pin Motor_A_Direction_1_Pin Motor_B_Direction_2_Pin Motor_B_Direction_1_Pin
-                           LED_1_Pin */
-  GPIO_InitStruct.Pin = Motor_A_Direction_2_Pin|Motor_A_Direction_1_Pin|Motor_B_Direction_2_Pin|Motor_B_Direction_1_Pin
-                          |LED_1_Pin;
+  /*Configure GPIO pins : Motor_A_SLP_Pin Motor_A_DIR_Pin Motor_A_STEP_GPIO_Pin LED_1_Pin */
+  GPIO_InitStruct.Pin = Motor_A_SLP_Pin|Motor_A_DIR_Pin|Motor_A_STEP_GPIO_Pin|LED_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -589,15 +549,27 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
 	verboseln("HAL_GPIO_EXTI_Callback on pin %s", s_gpio_pin);
 #endif
 
+	static uint32_t btn_blue_last_event = 0;
+	static uint32_t btn_ext_last_event = 0;
+
+	uint32_t t = HAL_GetTick();
+
 	if (pin == LSM6DSL_INT_1_Pin) {
 		verboseln("Received LSM6DSL data-ready signal");
 		osEventFlagsSet(lsm6dslEventHandle, LSM6DSL_EVENT_DATA_READY);
 	} else if (pin == Button_Blue_Pin) {
-		verboseln("Button has been pressed (internal)");
-		osEventFlagsSet(robotEventHandle, ROBOT_EVENT_START);
+		if (t > (btn_blue_last_event + BUTTON_DEBOUNCE_MS)) {
+			btn_blue_last_event = t;
+			verboseln("Button has been pressed (internal)");
+			osEventFlagsSet(robotEventHandle, ROBOT_EVENT_START);
+		}
+
 	} else if (pin == Button_External_1_Pin) {
-		verboseln("Button has been pressed (external)");
-		osEventFlagsSet(robotEventHandle, ROBOT_EVENT_TUNING);
+		if (t > (btn_ext_last_event + BUTTON_DEBOUNCE_MS)) {
+			btn_ext_last_event = t;
+			verboseln("Button has been pressed (external)");
+			osEventFlagsSet(robotEventHandle, ROBOT_EVENT_TUNING);
+		}
 	}
 }
 
@@ -612,72 +584,39 @@ static void initializeSensors()
 
 static void initializeMotors()
 {
-	L298N_Config l298n_config = {
-		.motor_a = {
-			.inverted = true, // depends on the wiring
-			.direction_1 = {
-				.port = Motor_A_Direction_1_GPIO_Port,
-				.pin = Motor_A_Direction_1_Pin
-			},
-			.direction_2 = {
-				.port = Motor_A_Direction_2_GPIO_Port,
-				.pin = Motor_A_Direction_2_Pin
-			},
-			.speed_type = L298N_MOTOR_SPEED_TYPE_ANALOG,
-			.speed = {
-				.analog = {
-					.tim = &htim3,
-					.channel = TIM_CHANNEL_3,
-				}
-			},
-			.speed_factor = a_factor
+	A4988_Config cfg_a = {
+		.step = {
+			.tim = &htim3,
+			.channel = TIM_CHANNEL_3
 		},
-		.motor_b = {
-			.inverted = false, // depends on the wiring
-			.direction_1 = {
-				.port = Motor_B_Direction_1_GPIO_Port,
-				.pin = Motor_B_Direction_1_Pin
-			},
-			.direction_2 = {
-				.port = Motor_B_Direction_2_GPIO_Port,
-				.pin = Motor_B_Direction_2_Pin
-			},
-			.speed_type = L298N_MOTOR_SPEED_TYPE_ANALOG,
-			.speed = {
-				.analog = {
-					.tim = &htim3,
-					.channel = TIM_CHANNEL_4,
-				}
-			},
-			.speed_factor = b_factor
+		.direction = {
+			.port = Motor_A_DIR_GPIO_Port,
+			.pin = Motor_A_DIR_Pin
 		},
+		.sleep = {
+			.port = Motor_A_SLP_GPIO_Port,
+			.pin = Motor_A_SLP_Pin
+		},
+		.inverted = false,
+		.steps_per_revolution = NEMA_17_STEPS_PER_REV
 	};
-
-	L298N_Init(l298n_config);
+	A4988_Init(&a4988_a, cfg_a);
+	A4988_Enable(&a4988_a);
 }
 
 static void initializeFilter()
 {
-	if (filter_type == FILTER_TYPE_COMPLEMENTARY) {
-		ComplementaryFilter_Config compl_filter_config = {
-			.alpha = COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
-			.sample_rate = SAMPLE_RATE
-		};
+	ComplementaryFilter_Config cfg = {
+		.alpha = COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
+		.sample_rate = SAMPLE_RATE
+	};
 
-		ComplementaryFilter_Init(compl_filter_config);
-	} else {
-		MadgwickFilter_Config madgwick_filter_config = {
-			.beta = beta,
-			.sample_rate = SAMPLE_RATE
-		};
-
-		MadgwickFilter_Init(madgwick_filter_config);
-	}
+	ComplementaryFilter_Init(&filter, cfg);
 }
 
 static void initializePID()
 {
-	PID_Config pid_config = {
+	PID_Config cfg = {
 		.Kp = kp,
 		.Ki = ki,
 		.Kd = kd,
@@ -687,7 +626,7 @@ static void initializePID()
 		.direction = PID_DIRECTION_DIRECT
 	};
 
-	PID_Init(pid_config);
+	PID_Init(&pid, cfg);
 }
 
 static void initializeRobot()
@@ -712,18 +651,10 @@ static void tuningOverSerial()
 		"+<VALUE>: manually forward motor" SERIAL_ENDL
 		"-<VALUE>: manually backward motor" SERIAL_ENDL
 		"0       : manually stop motors" SERIAL_ENDL
-		".       : FILTER_TYPE (toggle)" SERIAL_ENDL
 		"t<VALUE>: COMPLEMENTARY_FILTER_TAU" SERIAL_ENDL
-		"b<VALUE>: MADGWICK_FILTER_BETA" SERIAL_ENDL
 		"p<VALUE>: PID_KP" SERIAL_ENDL
 		"d<VALUE>: PID_KD" SERIAL_ENDL
 		"i<VALUE>: PID_KI" SERIAL_ENDL
-		"o<VALUE>: MOTOR_DUTY_CYCLE_MIN" SERIAL_ENDL
-		"O<VALUE>: MOTOR_DUTY_CYCLE_MAX" SERIAL_ENDL
-		"><VALUE>: MOTORS_FORWARD_SPEED_FACTOR" SERIAL_ENDL
-		"<<VALUE>: MOTORS_BACKWARD_SPEED_FACTOR" SERIAL_ENDL
-		"A<VALUE>: MOTOR_A_SPEED_FACTOR" SERIAL_ENDL
-		"B<VALUE>: MOTOR_B_SPEED_FACTOR" SERIAL_ENDL
 		"c<VALUE>: SETPOINT" SERIAL_ENDL
 		"z       : SIMULATION_MODE (toggle)" SERIAL_ENDL
 		"s       : PRINT_STEP_RESPONSE (toggle)"
@@ -736,6 +667,7 @@ static void tuningOverSerial()
 		printf("$ ");
 		Serial_ReadStringCR(data, 16);
 
+		// Parse command (first char) and argument (remaining part)
 		char cmd = '\0';
 		float arg = 0;
 		size_t len = strlen(data);
@@ -745,32 +677,24 @@ static void tuningOverSerial()
 				arg = strtof(&data[1], NULL);
 		}
 
-		// Tuning options
+		// Handle command
 		switch (cmd) {
 		case '+':
 			initializeMotors();
-			L298N_Forward(L298N_MOTOR_BOTH, arg);
+			A4988_Forward(&a4988_a, arg);
 			break;
 		case '-':
 			initializeMotors();
-			L298N_Backward(L298N_MOTOR_BOTH, arg);
+			A4988_Backward(&a4988_a, arg);
 			break;
 		case '0':
-			L298N_Stop(L298N_MOTOR_BOTH);
+			initializeMotors();
+			A4988_Disable(&a4988_a);
 			break;
-		case 'f': filter_type = filter_type == FILTER_TYPE_COMPLEMENTARY ?
-					FILTER_TYPE_MADGWICK : FILTER_TYPE_COMPLEMENTARY; break;
 		case 't': tau = arg; break;
-		case 'b': beta = arg; break;
 		case 'p': kp = arg; break;
 		case 'd': kd = arg; break;
 		case 'i': ki = arg; break;
-		case 'm': pwm_min = arg; break;
-		case 'M': pwm_max = arg; break;
-		case '>': forward_factor = arg; break;
-		case '<': backward_factor = arg; break;
-		case 'A': a_factor = arg; break;
-		case 'B': b_factor = arg; break;
 		case 'c': setpoint = arg; break;
 		case 'z': simulation = !simulation; break;
 		case 's': print_step_response = !print_step_response; break;
@@ -795,40 +719,24 @@ static void printRobotParameters() {
 	println(
 		"# SAMPLE_RATE                  = %f Hz" SERIAL_ENDL
 		"# (SAMPLE_TIME)                = %f s" SERIAL_ENDL
-		"# FILTER_TYPE                  = %s"SERIAL_ENDL
 		"# COMPLEMENTARY_FILTER_TAU     = %f"SERIAL_ENDL
 		"# (COMPLEMENTARY_FILTER_ALPHA) = %f"SERIAL_ENDL
-		"# MADGWICK_FILTER_BETA         = %f"SERIAL_ENDL
 		"# PID_KP                       = %f"SERIAL_ENDL
 		"# PID_KI                       = %f"SERIAL_ENDL
 		"# PID_KD                       = %f"SERIAL_ENDL
-		"# MOTOR_DUTY_CYCLE_MIN         = %f %%" SERIAL_ENDL
-		"# MOTOR_DUTY_CYCLE_MAX         = %f %%" SERIAL_ENDL
-		"# MOTORS_FORWARD_SPEED_FACTOR  = %f"SERIAL_ENDL
-		"# MOTORS_BACKWARD_SPEED_FACTOR = %f"SERIAL_ENDL
-		"# MOTOR_A_SPEED_FACTOR         = %f"SERIAL_ENDL
-		"# MOTOR_B_SPEED_FACTOR         = %f"SERIAL_ENDL
-		"# DEG_SETPOINT                 = %f deg"SERIAL_ENDL
-		"# DEG_GIVUP                    = %f deg"SERIAL_ENDL
+		"# SETPOINT_DEG                 = %f deg"SERIAL_ENDL
+		"# GIVEUP_DEG                   = %f deg"SERIAL_ENDL
 		"# SIMULATION                   = %s"SERIAL_ENDL
 		"# PRINT_STEP_RESPONSE          = %s",
 		SAMPLE_RATE,
 		1 / SAMPLE_RATE,
-		filter_type == FILTER_TYPE_COMPLEMENTARY ? "complementary" :  "madgwick",
 		tau,
 		COMPLEMENTARY_FILTER_ALPHA(tau, SAMPLE_RATE),
-		beta,
 		kp,
 		ki,
 		kd,
-		pwm_min,
-		pwm_max,
-		forward_factor,
-		backward_factor,
-		a_factor,
-		b_factor,
 		setpoint,
-		giveup,
+		GIVEUP_DEG,
 		BOOL_TO_STR(simulation),
 		BOOL_TO_STR(print_step_response)
 	);
@@ -848,42 +756,44 @@ static void handleSensorsMeasurement(dim3_f xl, dim3_f g)
 	g.z -= GYRO_OFFSET_Z;
 
 	// Estimate the angle using measures from both sensors with a filter
-	float input;
-	if (filter_type == FILTER_TYPE_COMPLEMENTARY)
-		ComplementaryFilter_Compute(xl, g, &input, NULL, NULL);
-	else
-		MadgwickFilter_Compute(xl, g, &input, NULL, NULL);
+	ComplementaryFilter_Compute(&filter, xl, g);
+	float input = filter.roll;
+
+	verboseln("Roll = %.2f deg", input);
 
 	// Do not even try to balance if the robot is too much sloped
-	if (ABS(input) > giveup) {
-		L298N_Stop(L298N_MOTOR_BOTH);
+	if (ABS(input) > GIVEUP_DEG) {
 		return;
 	}
 
 	// Compute the motor's output using a PID
-	float output = PID_Compute(input);
+	PID_Compute(&pid, input);
+	float output = pid.output;
+
+	verboseln("RPM = %.2f", output);
 
 	// Eventually increase the speed depending on the direction
-	bool go_forward = (output < 0);
-	output *= go_forward ? forward_factor : backward_factor;
+	bool go_forward = (output > 0);
 
 	// Eventually remap output to the range [pwm_min, pwm_max]
-	float duty_cycle = mapf(
-		rangef(ABS(output), 0.0f, 100.0f),
-		0.0f, 100.0f,
-		pwm_min, pwm_max
-	);
+//	float duty_cycle = mapf(
+//		rangef(ABS(output), 0.0f, 100.0f),
+//		0.0f, 100.0f,
+//		pwm_min, pwm_max
+//	);
 
 	// Actually control the motors
 	if (!simulation) {
-		if (go_forward)
-			L298N_Forward(L298N_MOTOR_BOTH, duty_cycle);
-		else
-			L298N_Backward(L298N_MOTOR_BOTH, duty_cycle);
+		if (go_forward) {
+			A4988_Forward(&a4988_a, ABS(output));
+		}
+		else {
+			A4988_Backward(&a4988_a, ABS(output));
+		}
 	}
 
 	if (print_step_response)
-		println("%u %f %f", HAL_GetTick(), input, copysignf(duty_cycle, output));
+		println("%u %f %f", HAL_GetTick(), input, output);
 }
 
 /* USER CODE END 4 */
@@ -901,15 +811,13 @@ void StartPrimaryTask(void *argument)
 
 	uint32_t flags;
 
-	GPIO_Pin_High(led1);
-	GPIO_Pin_Low(led2);
+	GPIO_Pin_High(led1); GPIO_Pin_Low(led2);
 
 	// Do not start immediately.
 	// Wait for either the start or the tuning event.
 	do {
 		verboseln("Waiting for event...");
-		GPIO_Pin_Toggle(led1);
-		GPIO_Pin_Toggle(led2);
+		GPIO_Pin_Toggle(led1); GPIO_Pin_Toggle(led2);
 
 		flags = osEventFlagsWait(
 			robotEventHandle,
@@ -917,21 +825,21 @@ void StartPrimaryTask(void *argument)
 			osFlagsWaitAny, 1000
 		);
 		if (flags & osFlagsError)
-			continue;
+			continue; // timeout
 
 		if (flags & ROBOT_EVENT_TUNING) {
-			GPIO_Pin_High(led1);
-			GPIO_Pin_High(led2);
+			GPIO_Pin_High(led1); GPIO_Pin_High(led2);
 			tuningOverSerial();
+			GPIO_Pin_High(led1); GPIO_Pin_Low(led2);
 		}
 	} while (!(flags & ROBOT_EVENT_START));
 
-	GPIO_Pin_Low(led1);
-	GPIO_Pin_Low(led2);
+	GPIO_Pin_Low(led1); GPIO_Pin_Low(led2);
 
 	// Actually start the robot main loop
 
 	initializeRobot();
+
 
 	static const uint32_t DISCARD_INITIAL_SAMPLES = 5;
 	uint64_t samples = 0;
@@ -973,24 +881,6 @@ void StartPrimaryTask(void *argument)
 	}
 
   /* USER CODE END 5 */
-}
-
-/* USER CODE BEGIN Header_StartSecondaryTask */
-/**
-* @brief Function implementing the secondaryTas thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartSecondaryTask */
-void StartSecondaryTask(void *argument)
-{
-  /* USER CODE BEGIN StartSecondaryTask */
-	while (1) {
-//		println("Roll  (x): %f", roll);
-		osDelay(100);
-	}
-
-  /* USER CODE END StartSecondaryTask */
 }
 
  /**
