@@ -4,20 +4,24 @@
 
 
 #define VERBOSE_FMT(fmt) "{PID} " fmt
-static PID_Config config;
-static float sample_time;
-static float Kp, Ki_, Kd_;
 
-void PID_Init(PID_Config c)
+
+void PID_Init(PID *pid, PID_Config config)
 {
-	config = c;
 
-	sample_time = 1 / config.sample_rate;
+	pid->config = config;
+
+	pid->_.sample_time = 1 / config.sample_rate;
 
 	float sign = ((config.direction == PID_DIRECTION_DIRECT) ? 1.0f : -1.0f);
-	Kp =  sign * config.Kp;
-	Ki_ = sign * config.Ki * sample_time;
-	Kd_ = sign * config.Kd / sample_time;
+
+	pid->_.Kp = sign * config.Kp;
+	pid->_.Ki = sign * config.Ki * pid->_.sample_time;
+	pid->_.Kd = sign * config.Kd / pid->_.sample_time;
+
+	pid->_.e_sum = 0;
+	pid->_.e_last = 0;
+
 
 	verboseln(
 		"Initialized" SERIAL_ENDL
@@ -36,30 +40,21 @@ void PID_Init(PID_Config c)
 	);
 }
 
-float PID_Compute(float input)
+void PID_Compute(PID *pid, float input)
 {
-	return PID_ComputeCustomSetpoint(input, config.setpoint);
-}
+	float e = pid->config.setpoint - input;
 
-float PID_ComputeCustomSetpoint(float input, float setpoint)
-{
-	static float e_sum = 0;
-	static float e_last = 0;
+	pid->_.e_sum += e;
 
-	float e = setpoint - input;
+	float p = pid->_.Kp * e;
+	float i = pid->_.Ki * pid->_.e_sum;
+	float d = pid->_.Kd * (e - pid->_.e_last);
 
-	e_sum += e;
+	pid->_.e_last = e;
 
-	float p = Kp * e;
-	float i = Ki_ * e_sum;
-	float d = Kd_ * (e - e_last);
-	float pid = p + i + d;
+	pid->output = p + i + d;
 
-	e_last = e;
-
-	if (config.limit_output)
-		pid = rangef(pid, config.output_limits.min, config.output_limits.max);
-
-	return pid;
+	if (pid->config.limit_output)
+		pid->output = rangef(pid->output, pid->config.output_limits.min, pid->config.output_limits.max);
 }
 

@@ -22,8 +22,19 @@ typedef struct PID_Config {
 
 } PID_Config;
 
-void PID_Init(PID_Config config);
-float PID_Compute(float input);
-float PID_ComputeCustomSetpoint(float input, float setpoint);
+typedef struct PID {
+	PID_Config config;
+	float output;
+	struct {
+		float sample_time; // s
+		float Kp, Ki, Kd;
+		float e_sum;
+		float e_last;
+	} _;
+} PID;
+
+
+void PID_Init(PID *pid, PID_Config config);
+void PID_Compute(PID *pid, float input);
 
 #endif /* PID_H */
