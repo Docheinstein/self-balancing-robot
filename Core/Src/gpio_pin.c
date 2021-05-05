@@ -11,7 +11,7 @@ void GPIO_Pin_Toggle(GPIO_Pin pin)
 #if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	verboseln("Toggle (%s)", s_pin);
+	averboseln("Toggle (%s)", s_pin);
 #endif
 	HAL_GPIO_TogglePin(pin.port, pin.pin);
 }
@@ -21,7 +21,7 @@ void GPIO_Pin_High(GPIO_Pin pin)
 #if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	verboseln("High   (%s)", s_pin);
+	averboseln("High   (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_SET);
 }
@@ -31,7 +31,7 @@ void GPIO_Pin_Low(GPIO_Pin pin)
 #if VERBOSE
 	char s_pin[8];
 	GPIO_Pin_ToString(pin, s_pin, 8);
-	verboseln("Low    (%s)", s_pin);
+	averboseln("Low    (%s)", s_pin);
 #endif
 	HAL_GPIO_WritePin(pin.port, pin.pin, GPIO_PIN_RESET);
 }

@@ -23,7 +23,7 @@ void PID_Init(PID *pid, PID_Config config)
 	pid->_.e_last = 0;
 
 
-	verboseln(
+	averboseln(
 		"Initialized" SERIAL_ENDL
 		"- Kp: %f" SERIAL_ENDL
 		"- Ki: %f" SERIAL_ENDL
@@ -55,6 +55,10 @@ void PID_Compute(PID *pid, float input)
 	pid->output = p + i + d;
 
 	if (pid->config.limit_output)
-		pid->output = rangef(pid->output, pid->config.output_limits.min, pid->config.output_limits.max);
+		pid->output = rangef(
+				pid->output,
+				pid->config.output_limits.min,
+				pid->config.output_limits.max
+		);
 }
 

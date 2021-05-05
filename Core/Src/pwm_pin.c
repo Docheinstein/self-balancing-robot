@@ -3,6 +3,7 @@
 #include "math.h"
 
 #include "verbose.h"
+#include "serial.h"
 
 #define VERBOSE_FMT(fmt) "{PWM_Pin} " fmt
 
@@ -11,7 +12,7 @@ void PWM_Pin_Start(PWM_Pin pin)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("Start     (%s)", s_pin);
+	averboseln("Start     (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Start(pin.tim, pin.channel);
 }
@@ -21,7 +22,7 @@ void PWM_Pin_Stop(PWM_Pin pin)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("Stop      (%s)", s_pin);
+	averboseln("Stop      (%s)", s_pin);
 #endif
 	HAL_TIM_PWM_Stop(pin.tim, pin.channel);
 }
@@ -30,6 +31,7 @@ void PWM_Pin_Set(PWM_Pin pin, float frequency, float percentage)
 {
 	PWM_Pin_SetFrequency(pin, frequency);
 	PWM_Pin_SetDutyCycle(pin, percentage);
+	__HAL_TIM_SET_COUNTER(pin.tim, 0);
 }
 
 void PWM_Pin_SetFrequency(PWM_Pin pin, float frequency)
@@ -37,7 +39,7 @@ void PWM_Pin_SetFrequency(PWM_Pin pin, float frequency)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("Frequency (%s) := %.2fHz", s_pin, frequency);
+	averboseln("Frequency (%s) := %.2fHz", s_pin, frequency);
 #endif
 
 	/**
@@ -60,8 +62,8 @@ void PWM_Pin_SetFrequency(PWM_Pin pin, float frequency)
 	uint32_t psc =  ceil((K / (M)) - 1);
 	uint32_t arr = floor((K / (psc + 1))    - 1);
 
-	verboseln("psc=%u | arr=%u | f=%uHz",
-			psc, arr, SystemCoreClock / ((psc + 1) * (arr + 1)));
+	averboseln("PSC=%u | ARR=%u | F=%.3fHz",
+			  psc, arr, (double) SystemCoreClock / ((psc + 1) * (arr + 1)));
 
 	PWM_Pin_SetPSC(pin, psc);
 	PWM_Pin_SetARR(pin, arr);
@@ -72,7 +74,7 @@ void PWM_Pin_SetDutyCycle(PWM_Pin pin, float percentage)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("DutyCycle (%s) := %.2f%%", s_pin, percentage);
+	averboseln("DutyCycle (%s) := %.2f%%", s_pin, percentage);
 #endif
 	PWM_Pin_SetCCR(
 			pin,
@@ -85,7 +87,7 @@ void PWM_Pin_SetPSC(PWM_Pin pin, uint32_t psc)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("PSC (%s) := %u", s_pin, psc);
+	averboseln("PSC (%s) := %u", s_pin, psc);
 #endif
 	__HAL_TIM_SET_PRESCALER(pin.tim, psc);
 }
@@ -95,7 +97,7 @@ void PWM_Pin_SetARR(PWM_Pin pin, uint32_t arr)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("ARR (%s) := %u", s_pin, arr);
+	averboseln("ARR (%s) := %u", s_pin, arr);
 #endif
 	__HAL_TIM_SET_AUTORELOAD(pin.tim, arr);
 }
@@ -106,7 +108,7 @@ void PWM_Pin_SetCCR(PWM_Pin pin, uint32_t ccr)
 #if VERBOSE
 	char s_pin[8];
 	PWM_Pin_ToString(pin, s_pin, 8);
-	verboseln("CCR (%s) := %u", s_pin, ccr);
+	averboseln("CCR (%s) := %u", s_pin, ccr);
 #endif
 	__HAL_TIM_SET_COMPARE(pin.tim, pin.channel, ccr);
 }
