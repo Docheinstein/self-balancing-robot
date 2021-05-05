@@ -1,4 +1,0 @@
-1. Tuning PID e filtri (complementary, madgwick)
-2. Scrivere README.MD
-3. Refactor
-4. Commentare codice con qualche spiegazione
