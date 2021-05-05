@@ -14,7 +14,7 @@
 
 // =========== REGISTERS ===============
 
-// Control/Interrupt/Misc
+// Control
 
 #define LSM6DSL_REG_CTRL1_XL 		0x10
 #define LSM6DSL_REG_CTRL2_G 		0x11
@@ -29,8 +29,12 @@
 
 #define LSM6DSL_REG_MASTER_CONFIG 	0x1A
 
+// Interrupt
+
 #define LSM6DSL_REG_INT1_CTRL 		0x0D
 #define LSM6DSL_REG_INT2_CTRL 		0x0E
+
+// Other
 
 #define LSM6DSL_REG_STATUS			0x1E
 #define LSM6DSL_REG_WHO_AM_AI		0x0F
@@ -157,6 +161,7 @@ HAL_StatusTypeDef LSM6DSL_ReadGyroscope(dim3_i16 *g);
 HAL_StatusTypeDef LSM6DSL_ReadGyroscope_dps(dim3_f *g); // dps: degrees per second
 HAL_StatusTypeDef LSM6DSL_ReadTemperature_C(float *temperature); // C°
 
-float LSM6DSL_Frequency_ToSampleRate(LSM6DSL_Frequency freq); // Hz
+int LSM6DSL_Frequency_ToInt(LSM6DSL_Frequency freq); // Hz
+LSM6DSL_Frequency LSM6DSL_Frequency_FromInt(int freq);
 
 #endif /* LSM6DSL_H */
