@@ -50,8 +50,6 @@ extern "C" {
 
 /* USER CODE END EM */
 
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
-
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -63,24 +61,25 @@ void Error_Handler(void);
 #define Button_Blue_Pin GPIO_PIN_13
 #define Button_Blue_GPIO_Port GPIOC
 #define Button_Blue_EXTI_IRQn EXTI15_10_IRQn
-#define Motor_A_SLP_Pin GPIO_PIN_0
-#define Motor_A_SLP_GPIO_Port GPIOA
-#define Motor_A_DIR_Pin GPIO_PIN_1
-#define Motor_A_DIR_GPIO_Port GPIOA
-#define Motor_A_STEP_GPIO_Pin GPIO_PIN_3
-#define Motor_A_STEP_GPIO_GPIO_Port GPIOA
+#define Motor_A_Sleep_Pin GPIO_PIN_0
+#define Motor_A_Sleep_GPIO_Port GPIOA
+#define Motor_A_Direction_Pin GPIO_PIN_1
+#define Motor_A_Direction_GPIO_Port GPIOA
+#define Motor_B_Direction_Pin GPIO_PIN_3
+#define Motor_B_Direction_GPIO_Port GPIOA
+#define Motor_B_Sleep_Pin GPIO_PIN_4
+#define Motor_B_Sleep_GPIO_Port GPIOA
 #define LED_1_Pin GPIO_PIN_5
 #define LED_1_GPIO_Port GPIOA
-#define Motor_A_STEP_Pin GPIO_PIN_0
-#define Motor_A_STEP_GPIO_Port GPIOB
+#define Motor_A_Step_Pin GPIO_PIN_2
+#define Motor_A_Step_GPIO_Port GPIOB
 #define LED_2_Pin GPIO_PIN_14
 #define LED_2_GPIO_Port GPIOB
 #define LSM6DSL_INT_1_Pin GPIO_PIN_11
 #define LSM6DSL_INT_1_GPIO_Port GPIOD
 #define LSM6DSL_INT_1_EXTI_IRQn EXTI15_10_IRQn
-#define Button_External_1_Pin GPIO_PIN_14
-#define Button_External_1_GPIO_Port GPIOD
-#define Button_External_1_EXTI_IRQn EXTI15_10_IRQn
+#define Motor_B_Step_Pin GPIO_PIN_15
+#define Motor_B_Step_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
