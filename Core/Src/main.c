@@ -824,8 +824,6 @@ void StartPrimaryTask(void *argument)
 			ROBOT_EVENT_START | ROBOT_EVENT_TUNING,
 			osFlagsWaitAny, 1000
 		);
-		if (flags & osFlagsError)
-			continue; // timeout
 
 		if (flags & ROBOT_EVENT_TUNING) {
 			GPIO_Pin_High(led1); GPIO_Pin_High(led2);
