@@ -15,6 +15,7 @@ typedef struct ComplementaryFilter {
 		float alpha;
 		float one_minus_alpha;
 		float sample_time; // s
+		float g_roll;
 	} _;
 } ComplementaryFilter;
 
