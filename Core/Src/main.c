@@ -64,6 +64,7 @@ typedef struct SerialCommand {
 #define CMD_KI_PREFIX 'i'
 #define CMD_KD_PREFIX 'd'
 #define CMD_DEFAULT_SETPOINT_DEG_PREFIX 'c'
+#define CMD_GYRO_X_OFFSET_PREFIX 'o'
 #define CMD_DEFAULT_SIMULATION_MODE_PREFIX 'x'
 #define CMD_DEFAULT_DISPLAY_STEP_RESPONSE_PREFIX 's'
 #define CMD_DEFAULT_DISPLAY_MOTOR_RESPONSIVENESS_PREFIX 'm'
@@ -332,6 +333,7 @@ static void cmdSetKp(const char *arg);
 static void cmdSetKd(const char *arg);
 static void cmdSetKi(const char *arg);
 static void cmdSetSetpoint(const char *arg);
+static void cmdSetGyroXOffset(const char *arg);
 static void cmdSetOrToggleSimulationMode(const char *arg);
 static void cmdSetOrToggleDisplayStepResponse(const char *arg);
 static void cmdSetOrToggleDisplayMotorResponsiveness(const char *arg);
@@ -383,6 +385,10 @@ const SerialCommand COMMANDS[] = {
 			.arg_help = "<FLOAT",
 			.help = "set 'setpoint_deg'",
 			.fn = cmdSetSetpoint},
+	{.prefix = CMD_GYRO_X_OFFSET_PREFIX,
+			.arg_help = "<FLOAT>",
+			.help = "set the gyroscope x offset",
+			.fn = cmdSetGyroXOffset},
 	{.prefix = CMD_DEFAULT_SIMULATION_MODE_PREFIX,
 			.arg_help = "[0|1]",
 			.help = "set or toggle 'simulation_mode'",
@@ -1141,11 +1147,11 @@ static void cmdPrintConfig(const char *arg)
 			EXPAND_PARAM(CMD_KD_PREFIX, "kd",
 					kd, DEFAULT_PID_KD));
 	aprintln(FLOAT_PARAM_FMT,
-			EXPAND_PARAM(' ', "gyro_x_offset",
-					gyro_x, GYRO_OFFSET_X));
-	aprintln(FLOAT_PARAM_FMT,
 			EXPAND_PARAM(CMD_DEFAULT_SETPOINT_DEG_PREFIX, "setpoint_deg",
 					setpoint_deg, DEFAULT_SETPOINT_DEG));
+	aprintln(FLOAT_PARAM_FMT,
+			EXPAND_PARAM(CMD_GYRO_X_OFFSET_PREFIX, "gyro_x_offset",
+					gyro_x, GYRO_OFFSET_X));
 	aprintln(FLOAT_PARAM_FMT,
 			EXPAND_PARAM(' ', "giveup_deg",
 					GIVEUP_DEG, GIVEUP_DEG));
@@ -1274,6 +1280,15 @@ static void cmdSpinMotors(const char *arg)
 	running = true;
 	target_rpm = val;
 	osSignalSet(motorControllerTaskHandle, MOTOR_CONTROLLER_TASK_SIGNAL_OUTPUT_READY);
+}
+
+static void cmdSetGyroXOffset(const char *arg)
+{
+	float val;
+	if (!_setFloatFromArg(&val, arg))
+		return;
+	gyro_x = val;
+	averboseln("new gyro_x offset value set to %f", gyro_x);
 }
 
 static void cmdGyroAutotuning(const char *arg)
