@@ -71,6 +71,7 @@ typedef struct SerialCommand {
 #define CMD_STEP_MOTOR_A_PREFIX 'a'
 #define CMD_STEP_MOTOR_B_PREFIX 'b'
 #define CMD_SPIN_MOTORS_PREFIX 'g'
+#define CMD_GYRO_AUTOTUNING_PREFIX 'u'
 #define CMD_START_PREFIX '1'
 #define CMD_STOP_PREFIX '0'
 
@@ -89,8 +90,6 @@ typedef struct SerialCommand {
  * Actually only the X one is computed since the other are not used.
  */
 #define GYRO_OFFSET_X  0.31210f
-#define GYRO_OFFSET_Y  0.0f
-#define GYRO_OFFSET_Z  0.0f
 
 /*
  * Accelerometer adjustments.
@@ -141,7 +140,6 @@ typedef struct SerialCommand {
 
 // For development purpose in order to compute GYRO_OFFSET_X
 #define DISPLAY_GYRO_X false
-
 
 /* ----- runtime-configurable parameters ----- */
 
@@ -267,6 +265,12 @@ static bool simulation_mode = DEFAULT_SIMULATION_MODE;
 static volatile bool display_step_response = DEFAULT_DISPLAY_STEP_RESPONSE;
 static volatile bool display_motor_responsiveness = DEFAULT_DISPLAY_MOTOR_RESPONSIVENESS;
 static volatile bool echo_commands = DEFAULT_ECHO_COMMANDS;
+static volatile bool gyro_autotuning = false;
+static volatile float gyro_x = GYRO_OFFSET_X;
+static volatile struct {
+	float sum;
+	int count;
+} gyro_autotuning_mean;
 
 /* ----- robot state  ----- */
 
@@ -333,6 +337,7 @@ static void cmdSetOrToggleDisplayStepResponse(const char *arg);
 static void cmdSetOrToggleDisplayMotorResponsiveness(const char *arg);
 static void cmdSetOrToggleEchoCommands(const char *arg);
 static void cmdSpinMotors(const char *arg);
+static void cmdGyroAutotuning(const char *arg);
 static void cmdStart(const char *arg);
 static void cmdStop(const char *arg);
 
@@ -404,6 +409,10 @@ const SerialCommand COMMANDS[] = {
 			.arg_help = "<FLOAT>",
 			.help = "start the motors with the given RPM",
 			.fn = cmdSpinMotors},
+	{.prefix = CMD_GYRO_AUTOTUNING_PREFIX,
+			.arg_help = "<INT>",
+			.help = "start the gyroscope tuning for the given seconds",
+			.fn = cmdGyroAutotuning},
 	{.prefix = CMD_START_PREFIX,
 			.arg_help = "",
 			.help = "start the self-balancing robot",
@@ -1132,6 +1141,9 @@ static void cmdPrintConfig(const char *arg)
 			EXPAND_PARAM(CMD_KD_PREFIX, "kd",
 					kd, DEFAULT_PID_KD));
 	aprintln(FLOAT_PARAM_FMT,
+			EXPAND_PARAM(' ', "gyro_x_offset",
+					gyro_x, GYRO_OFFSET_X));
+	aprintln(FLOAT_PARAM_FMT,
 			EXPAND_PARAM(CMD_DEFAULT_SETPOINT_DEG_PREFIX, "setpoint_deg",
 					setpoint_deg, DEFAULT_SETPOINT_DEG));
 	aprintln(FLOAT_PARAM_FMT,
@@ -1264,6 +1276,38 @@ static void cmdSpinMotors(const char *arg)
 	osSignalSet(motorControllerTaskHandle, MOTOR_CONTROLLER_TASK_SIGNAL_OUTPUT_READY);
 }
 
+static void cmdGyroAutotuning(const char *arg)
+{
+	int val;
+	if (!_setIntFromArg(&val, arg))
+		return;
+	val *= 1000;
+	gyro_autotuning = true;
+	gyro_autotuning_mean.sum = 0;
+	gyro_autotuning_mean.count = 0;
+	aprintln("---------------------------");
+	initializeSensors();
+	startSensors();
+
+	uint32_t start = GetMilliseconds();
+	uint32_t end = start + val;
+	while (true) {
+		osDelay(2000);
+		uint32_t now = GetMilliseconds();
+		if (now > end)
+			break;
+		float progress = 100.0f * (now - start) / val;
+		aprintln("[%.1f%%] %f", progress, gyro_autotuning_mean.sum / gyro_autotuning_mean.count);
+	}
+
+	stopSensors();
+	osSignalSet(inputProcessorTaskHandle, INPUT_PROCESSOR_TASK_SIGNAL_RESET);
+	gyro_autotuning = false;
+	gyro_x = gyro_autotuning_mean.sum / gyro_autotuning_mean.count;
+	aprintln("---------------------------");
+	aprintln("New gyro_x offset is: %f", gyro_x);
+}
+
 static void cmdStart(const char *arg)
 {
 	averboseln("Command START");
@@ -1350,9 +1394,15 @@ void InputProcessorTask(void const * argument)
 		aprintln("%f", g.x);
 #endif
 
+		if (gyro_autotuning) {
+			gyro_autotuning_mean.sum += g.x;
+			gyro_autotuning_mean.count ++;
+			continue;
+		}
+
 		// Apply adjustments to sensors measurements
 		xl.x -= ACCEL_OFFSET_X; xl.y -= ACCEL_OFFSET_Y; xl.z -= ACCEL_OFFSET_Z;
-		g.x -= GYRO_OFFSET_X; g.y -= GYRO_OFFSET_Y; g.z -= GYRO_OFFSET_Z;
+		g.x -= gyro_x;
 
 		// Estimate the angle using measures from both sensors with a filter
 		ComplementaryFilter_Compute(&filter, xl, g);
@@ -1375,7 +1425,6 @@ void InputProcessorTask(void const * argument)
 				taprintln("%f deg | %f rpm | %f Hz",
 							input, target_rpm, target_rpm * RPM_TO_FREQ);
 		}
-
 		// Wake up the motor task since the target rpm is changed
 		Task_SignalSet(motorControllerTaskHandle, MOTOR_CONTROLLER_TASK_SIGNAL_OUTPUT_READY);
 	}
