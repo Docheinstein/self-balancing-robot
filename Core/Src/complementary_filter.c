@@ -44,12 +44,18 @@ void ComplementaryFilter_Compute(
 #endif
 	}
 
+#if DISPLAY_RAW_ROLL
+	float filter_roll_before = filter->roll;
+#endif
+
+
 	filter->roll = filter->_.alpha * (filter->roll + g.x * filter->_.sample_time) +
 				   filter->_.one_minus_alpha * xl_roll;
 
 #if DISPLAY_RAW_ROLL
 	filter->_.g_roll += g.x * filter->_.sample_time;
-	aprintln("xl_roll = %f | g_roll = %f | filter_roll = %f", xl_roll, filter->_.g_roll, filter->roll);
+	aprintln("g.x = % .4f | g_roll = % .4f | xl_roll = % .4f | filter_roll_before % .4f | filter_roll = % .4f",
+			g.x, filter->_.g_roll, xl_roll, filter_roll_before, filter->roll);
 #endif
 
 }
