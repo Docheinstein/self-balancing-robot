@@ -5,7 +5,7 @@ University Project.
 Self-Balancing Robot using STM32 board and FreeRTOS.
 
 
-<img src="self-balancing-robot.png" alt="drawing" style="width:400px;"/>
+<img src="self-balancing-robot.png" alt="drawing" width="400"/>
 
 ## Hardware
 - STM32L4 (B-L475-IOT1A)
