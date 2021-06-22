@@ -90,7 +90,7 @@ typedef struct SerialCommand {
  * (which ideally should be 0).
  * Actually only the X one is computed since the other are not used.
  */
-#define GYRO_OFFSET_X  0.31210f
+#define GYRO_OFFSET_X  -0.257592f
 
 /*
  * Accelerometer adjustments.
@@ -155,7 +155,7 @@ typedef struct SerialCommand {
  * Changing this value changes the threshold of when
  * we trust the gyroscope or we trust the accelerometer.
  */
-#define DEFAULT_COMPLEMENTARY_FILTER_TAU 2.00f
+#define DEFAULT_COMPLEMENTARY_FILTER_TAU 5.00f
 
 /*
  * PID parameters.
@@ -163,15 +163,15 @@ typedef struct SerialCommand {
  * I: integral
  * D: derivative
  */
-#define DEFAULT_PID_KP  15.0f
-#define DEFAULT_PID_KI  120.0f
-#define DEFAULT_PID_KD  0.11f
+#define DEFAULT_PID_KP  8.0f
+#define DEFAULT_PID_KI  240.0f
+#define DEFAULT_PID_KD  0.18f
 
 /*
  * The desired angle;
  * can be adjusted if the hardware is not exactly balanced.
  */
-#define DEFAULT_SETPOINT_DEG  0.0f
+#define DEFAULT_SETPOINT_DEG  -0.05f
 
 #define DEFAULT_SIMULATION_MODE false
 #define DEFAULT_DISPLAY_STEP_RESPONSE false
@@ -271,6 +271,7 @@ static volatile float gyro_x = GYRO_OFFSET_X;
 static volatile struct {
 	float sum;
 	int count;
+	float values[16384];
 } gyro_autotuning_mean;
 
 /* ----- robot state  ----- */
@@ -1321,6 +1322,8 @@ static void cmdGyroAutotuning(const char *arg)
 	gyro_x = gyro_autotuning_mean.sum / gyro_autotuning_mean.count;
 	aprintln("---------------------------");
 	aprintln("New gyro_x offset is: %f", gyro_x);
+//	for (int i = 0; i < gyro_autotuning_mean.count; i++)
+//		aprintln("%f",gyro_autotuning_mean.values[i]);
 }
 
 static void cmdStart(const char *arg)
@@ -1410,8 +1413,9 @@ void InputProcessorTask(void const * argument)
 #endif
 
 		if (gyro_autotuning) {
+			gyro_autotuning_mean.values[gyro_autotuning_mean.count] = g.x;
 			gyro_autotuning_mean.sum += g.x;
-			gyro_autotuning_mean.count ++;
+			gyro_autotuning_mean.count++;
 			continue;
 		}
 
