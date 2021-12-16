@@ -90,7 +90,7 @@ typedef struct SerialCommand {
  * (which ideally should be 0).
  * Actually only the X one is computed since the other are not used.
  */
-#define GYRO_OFFSET_X  -0.257592f
+#define GYRO_OFFSET_X  0.30f
 
 /*
  * Accelerometer adjustments.
@@ -130,17 +130,28 @@ typedef struct SerialCommand {
 #define BUTTON_DEBOUNCE_MS 150
 
 /*
+ * Software debounce to prevents too near consecutive presses.
+ */
+#define BUTTON_LONG_PRESS_MS 2000
+
+
+/*
  * After how many steps blink the LEDs.
  */
-#define UI_BLINK_AFTER_STEPS 4
+#define UI_BLINK_AFTER_MOTOR_STEPS 4
+
+
+/*
+ * After how many steps blink the LEDs.
+ */
+#define UI_BLINK_AFTER_AUTOTUNING_SENSOR_READ 4
+
 
 /*
  * Command over serial max length.
  */
 #define COMMAND_MAX_LEN 16
 
-// For development purpose in order to compute GYRO_OFFSET_X
-#define DISPLAY_GYRO_X false
 
 /* ----- runtime-configurable parameters ----- */
 
@@ -163,15 +174,15 @@ typedef struct SerialCommand {
  * I: integral
  * D: derivative
  */
-#define DEFAULT_PID_KP  8.0f
-#define DEFAULT_PID_KI  240.0f
-#define DEFAULT_PID_KD  0.18f
+#define DEFAULT_PID_KP  6.0f
+#define DEFAULT_PID_KI  60.0f
+#define DEFAULT_PID_KD  0.12f
 
 /*
  * The desired angle;
  * can be adjusted if the hardware is not exactly balanced.
  */
-#define DEFAULT_SETPOINT_DEG  -0.05f
+#define DEFAULT_SETPOINT_DEG  0.0f
 
 #define DEFAULT_SIMULATION_MODE false
 #define DEFAULT_DISPLAY_STEP_RESPONSE false
@@ -213,6 +224,9 @@ osStaticThreadDef_t serialRxTaskControlBlock;
 osThreadId startStopTaskHandle;
 uint32_t startStopTaskBuffer[ 256 ];
 osStaticThreadDef_t startStopTaskControlBlock;
+osThreadId autotuningTaskHandle;
+uint32_t autotuningTaskBuffer[ 256 ];
+osStaticThreadDef_t autotuningTaskControlBlock;
 osMutexId sensorsMutexHandle;
 osStaticMutexDef_t sensorsMutexControlBlock;
 /* USER CODE BEGIN PV */
@@ -225,24 +239,28 @@ static const float FREQ_TO_RPM = 1 / RPM_TO_FREQ;
 /* ----- signals ----- */
 
 static const int START_STOP_TASK_SIGNAL_START = 					BIT(0);
-static const int START_STOP_TASK_SIGNAL_STOP = 						BIT(1);
+static const int START_STOP_TASK_SIGNAL_STOP = 					BIT(1);
 static const int START_STOP_TASK_SIGNAL_TOGGLE = 					BIT(2);
 
-static const int INPUT_PROCESSOR_TASK_SIGNAL_INPUT_READY = 			BIT(0);
+static const int INPUT_PROCESSOR_TASK_SIGNAL_INPUT_READY = 		BIT(0);
 static const int INPUT_PROCESSOR_TASK_SIGNAL_RESET = 				BIT(1);
 
 static const int UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_A =				BIT(0);
-static const int UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_A =				BIT(1);
+static const int UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_A =			BIT(1);
 static const int UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_B =				BIT(2);
-static const int UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_B =				BIT(3);
+static const int UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_B =			BIT(3);
+static const int UI_TASK_SIGNAL_AUTOTUNING =						BIT(4);
 
 static const int MOTOR_CONTROLLER_TASK_SIGNAL_OUTPUT_READY = 		BIT(0);
 static const int MOTOR_CONTROLLER_TASK_SIGNAL_RESET = 				BIT(1);
+
+static const int AUTOTUNING_TASK_SIGNAL = 							BIT(0);
 
 /* ----- peripherals ----- */
 
 static GPIO_Pin led1 = { .port = LED_1_GPIO_Port, .pin = LED_1_Pin };
 static GPIO_Pin led2 = { .port = LED_2_GPIO_Port, .pin = LED_2_Pin };
+static GPIO_Pin button = { .port = Button_Blue_GPIO_Port, .pin = Button_Blue_Pin };
 
 static A4988 a4988_a;
 static A4988 a4988_b;
@@ -267,11 +285,10 @@ static volatile bool display_step_response = DEFAULT_DISPLAY_STEP_RESPONSE;
 static volatile bool display_motor_responsiveness = DEFAULT_DISPLAY_MOTOR_RESPONSIVENESS;
 static volatile bool echo_commands = DEFAULT_ECHO_COMMANDS;
 static volatile bool gyro_autotuning = false;
-static volatile float gyro_x = GYRO_OFFSET_X;
+static volatile float gyro_offset_x = GYRO_OFFSET_X;
 static volatile struct {
 	float sum;
 	int count;
-	float values[16384];
 } gyro_autotuning_mean;
 
 /* ----- robot state  ----- */
@@ -295,6 +312,7 @@ void UITask(void const * argument);
 void SerialTxFlushTask(void const * argument);
 void SerialRxTask(void const * argument);
 void StartStopTask(void const * argument);
+void AutotuningTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 static void initializeFilter();
@@ -339,6 +357,8 @@ static void cmdSetOrToggleSimulationMode(const char *arg);
 static void cmdSetOrToggleDisplayStepResponse(const char *arg);
 static void cmdSetOrToggleDisplayMotorResponsiveness(const char *arg);
 static void cmdSetOrToggleEchoCommands(const char *arg);
+static void cmdStepMotorA(const char *arg);
+static void cmdStepMotorB(const char *arg);
 static void cmdSpinMotors(const char *arg);
 static void cmdGyroAutotuning(const char *arg);
 static void cmdStart(const char *arg);
@@ -412,6 +432,14 @@ const SerialCommand COMMANDS[] = {
 			.help = "set or toggle 'verbose'",
 			.fn = cmdSetOrToggleVerbose},
 #endif
+	{.prefix = CMD_STEP_MOTOR_A_PREFIX,
+			.arg_help = "[f|b]",
+			.help = "step forward motor A",
+			.fn = cmdStepMotorA},
+	{.prefix = CMD_STEP_MOTOR_B_PREFIX,
+			.arg_help = "[f|b]",
+			.help = "step forward motor A",
+			.fn = cmdStepMotorB},
 	{.prefix = CMD_SPIN_MOTORS_PREFIX,
 			.arg_help = "<FLOAT>",
 			.help = "start the motors with the given RPM",
@@ -525,6 +553,10 @@ int main(void)
   /* definition and creation of startStopTask */
   osThreadStaticDef(startStopTask, StartStopTask, osPriorityRealtime, 0, 256, startStopTaskBuffer, &startStopTaskControlBlock);
   startStopTaskHandle = osThreadCreate(osThread(startStopTask), NULL);
+
+  /* definition and creation of autotuningTask */
+  osThreadStaticDef(autotuningTask, AutotuningTask, osPriorityNormal, 0, 256, autotuningTaskBuffer, &autotuningTaskControlBlock);
+  autotuningTaskHandle = osThreadCreate(osThread(autotuningTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -767,7 +799,7 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : Button_Blue_Pin */
   GPIO_InitStruct.Pin = Button_Blue_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(Button_Blue_GPIO_Port, &GPIO_InitStruct);
 
@@ -803,18 +835,26 @@ static void MX_GPIO_Init(void)
 
 void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
-	static uint32_t btn_blue_last_event = 0;
+	static uint32_t button_last_t = 0;
 	uint32_t t = GetMilliseconds();
 
 	if (pin == LSM6DSL_INT_1_Pin) {
 		// SENSORS event (wake up InputProcessorTask)
 		osSignalSet(inputProcessorTaskHandle, INPUT_PROCESSOR_TASK_SIGNAL_INPUT_READY);
 	} else if (pin == Button_Blue_Pin) {
-		// START/STOP event
-		if (t > (btn_blue_last_event + BUTTON_DEBOUNCE_MS)) {
-			btn_blue_last_event = t;
-			osSignalSet(startStopTaskHandle, START_STOP_TASK_SIGNAL_TOGGLE);
+		// BUTTON event
+		bool rising = GPIO_Pin_Read(button);
+		if (rising) {
+			if (t - button_last_t > BUTTON_LONG_PRESS_MS) {
+				// Long press: auto tuning
+				osSignalSet(autotuningTaskHandle, AUTOTUNING_TASK_SIGNAL);
+			} else {
+				// Short press: start/stop
+				osSignalSet(startStopTaskHandle, START_STOP_TASK_SIGNAL_TOGGLE);
+			}
 		}
+
+		button_last_t = t;
 	}
 }
 
@@ -1053,6 +1093,38 @@ static void stopRobot()
 	stopMotors();
 }
 
+
+static void gyroAutotuning(int seconds) {
+	int ms = seconds * 1000;
+	gyro_autotuning = true;
+	gyro_autotuning_mean.sum = 0;
+	gyro_autotuning_mean.count = 0;
+	aprintln("----------------------------");
+	aprintln("--- GYROSCOPE AUTOTUNING ---");
+	aprintln("----------------------------");
+	initializeSensors();
+	startSensors();
+
+	uint32_t start = GetMilliseconds();
+	uint32_t end = start + ms;
+	while (true) {
+		osDelay(2000);
+		uint32_t now = GetMilliseconds();
+		if (now > end)
+			break;
+		float progress = 100.0f * (now - start) / ms;
+		aprintln("[%.1f%%] %f", progress, gyro_autotuning_mean.sum / gyro_autotuning_mean.count);
+	}
+
+	stopSensors();
+	osSignalSet(inputProcessorTaskHandle, INPUT_PROCESSOR_TASK_SIGNAL_RESET);
+	gyro_autotuning = false;
+	gyro_offset_x = gyro_autotuning_mean.sum / gyro_autotuning_mean.count;
+	aprintln("----------------------------");
+	aprintln("New gyro_offset_x offset is: %f", gyro_offset_x);
+}
+
+
 static bool _setFloatFromArg(float *var, const char *arg)
 {
 	char *endptr;
@@ -1065,6 +1137,7 @@ static bool _setFloatFromArg(float *var, const char *arg)
 	*var = result;
 	return true;
 }
+
 
 static bool _setIntFromArg(int *var, const char *arg)
 {
@@ -1151,8 +1224,8 @@ static void cmdPrintConfig(const char *arg)
 			EXPAND_PARAM(CMD_DEFAULT_SETPOINT_DEG_PREFIX, "setpoint_deg",
 					setpoint_deg, DEFAULT_SETPOINT_DEG));
 	aprintln(FLOAT_PARAM_FMT,
-			EXPAND_PARAM(CMD_GYRO_X_OFFSET_PREFIX, "gyro_x_offset",
-					gyro_x, GYRO_OFFSET_X));
+			EXPAND_PARAM(CMD_GYRO_X_OFFSET_PREFIX, "gyro_offset_x",
+					gyro_offset_x, GYRO_OFFSET_X));
 	aprintln(FLOAT_PARAM_FMT,
 			EXPAND_PARAM(' ', "giveup_deg",
 					GIVEUP_DEG, GIVEUP_DEG));
@@ -1270,6 +1343,32 @@ static void cmdSetOrToggleVerbose(const char *arg)
 }
 #endif
 
+
+static void cmdStepMotorA(const char *arg)
+{
+	bool forward = !arg || arg[0] == '\0' || arg[0] == 'f';
+
+	initializeMotors();
+	startMotors();
+	if (forward)
+		stepForwardMotorA(true);
+	else
+		stepBackwardMotorA(true);
+}
+
+
+static void cmdStepMotorB(const char *arg)
+{
+	bool forward = !arg || arg[0] == '\0' || arg[0] == 'f';
+
+	initializeMotors();
+	startMotors();
+	if (forward)
+		stepForwardMotorB(true);
+	else
+		stepBackwardMotorB(true);
+}
+
 static void cmdSpinMotors(const char *arg)
 {
 	float val;
@@ -1288,8 +1387,8 @@ static void cmdSetGyroXOffset(const char *arg)
 	float val;
 	if (!_setFloatFromArg(&val, arg))
 		return;
-	gyro_x = val;
-	averboseln("new gyro_x offset value set to %f", gyro_x);
+	gyro_offset_x = val;
+	averboseln("new gyro_offset_x offset value set to %f", gyro_offset_x);
 }
 
 static void cmdGyroAutotuning(const char *arg)
@@ -1297,33 +1396,7 @@ static void cmdGyroAutotuning(const char *arg)
 	int val;
 	if (!_setIntFromArg(&val, arg))
 		return;
-	val *= 1000;
-	gyro_autotuning = true;
-	gyro_autotuning_mean.sum = 0;
-	gyro_autotuning_mean.count = 0;
-	aprintln("---------------------------");
-	initializeSensors();
-	startSensors();
-
-	uint32_t start = GetMilliseconds();
-	uint32_t end = start + val;
-	while (true) {
-		osDelay(2000);
-		uint32_t now = GetMilliseconds();
-		if (now > end)
-			break;
-		float progress = 100.0f * (now - start) / val;
-		aprintln("[%.1f%%] %f", progress, gyro_autotuning_mean.sum / gyro_autotuning_mean.count);
-	}
-
-	stopSensors();
-	osSignalSet(inputProcessorTaskHandle, INPUT_PROCESSOR_TASK_SIGNAL_RESET);
-	gyro_autotuning = false;
-	gyro_x = gyro_autotuning_mean.sum / gyro_autotuning_mean.count;
-	aprintln("---------------------------");
-	aprintln("New gyro_x offset is: %f", gyro_x);
-//	for (int i = 0; i < gyro_autotuning_mean.count; i++)
-//		aprintln("%f",gyro_autotuning_mean.values[i]);
+	gyroAutotuning(val);
 }
 
 static void cmdStart(const char *arg)
@@ -1407,21 +1480,18 @@ void InputProcessorTask(void const * argument)
 		Task_averboseln("Accelerometer: (x=%f, y=%f, z=%f)g", xl.x, xl.y, xl.z);
 		Task_averboseln("Gyroscope:     (x=%f, y=%f, z=%f)dps", g.x, g.y, g.z);
 
-#if DISPLAY_GYRO_X
-		// (useful for compute GYRO_OFFSET_X)
-		aprintln("%f", g.x);
-#endif
-
 		if (gyro_autotuning) {
-			gyro_autotuning_mean.values[gyro_autotuning_mean.count] = g.x;
 			gyro_autotuning_mean.sum += g.x;
 			gyro_autotuning_mean.count++;
+			Task_SignalSet(uiTaskHandle, UI_TASK_SIGNAL_AUTOTUNING);
 			continue;
 		}
 
+		float gx_raw = g.x;
+
 		// Apply adjustments to sensors measurements
 		xl.x -= ACCEL_OFFSET_X; xl.y -= ACCEL_OFFSET_Y; xl.z -= ACCEL_OFFSET_Z;
-		g.x -= gyro_x;
+		g.x -= gyro_offset_x;
 
 		// Estimate the angle using measures from both sensors with a filter
 		ComplementaryFilter_Compute(&filter, xl, g);
@@ -1440,9 +1510,10 @@ void InputProcessorTask(void const * argument)
 
 			Task_averboseln("RPM = %.2f", target_rpm);
 
-			if (display_step_response)
-				taprintln("%f deg | %f rpm | %f Hz",
-							input, target_rpm, target_rpm * RPM_TO_FREQ);
+			if (display_step_response) {
+				taprintln("%f deg (xl_x_raw=%f, gyro_x_raw=%f, gyro_x=%f) | %f rpm | %f Hz",
+							input, xl.x, gx_raw, g.x, target_rpm, target_rpm * RPM_TO_FREQ);
+			}
 		}
 		// Wake up the motor task since the target rpm is changed
 		Task_SignalSet(motorControllerTaskHandle, MOTOR_CONTROLLER_TASK_SIGNAL_OUTPUT_READY);
@@ -1577,8 +1648,10 @@ void MotorControllerTask(void const * argument)
 /* USER CODE BEGIN Header_UITask */
 /*
  * UI Task.
- * Blinks internal LED1 and LED2 depending on whether
- * the robot is going forward or backward.
+ * Blinks internal LED1 and LED2 depending on what's happening.
+ * Actually the leds might blink for two reason:
+ * - the robot is going forward or backward
+ * - autotuning is going on
  */
 /* USER CODE END Header_UITask */
 void UITask(void const * argument)
@@ -1598,12 +1671,15 @@ void UITask(void const * argument)
 	uint8_t steps_backward = 0;
 	uint8_t micro_backward = 0;
 
+	uint8_t autotuning_reads = 0;
+
 	while (true) {
 		osEvent ev;
 		Task_SignalWaitGet(
 			ev,
 			(UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_A | UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_A |
-			UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_B | UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_B),
+			UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_B | UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_B |
+			UI_TASK_SIGNAL_AUTOTUNING),
 			osWaitForever
 		);
 		if (ev.value.signals & UI_TASK_SIGNAL_STEP_FORWARD_MOTOR_A ||
@@ -1613,10 +1689,10 @@ void UITask(void const * argument)
 			micro_forward = (micro_forward + 1) % MOTOR_MICROSTEPS_PER_STEP;
 			steps_forward =
 					(steps_forward + (micro_forward == 0))
-					% UI_BLINK_AFTER_STEPS;
+					% UI_BLINK_AFTER_MOTOR_STEPS;
 			GPIO_Pin_Low(led_backward);
 			GPIO_Pin_Write(led_forward,
-				steps_forward == UI_BLINK_AFTER_STEPS - 1 &&
+				steps_forward == UI_BLINK_AFTER_MOTOR_STEPS - 1 &&
 				micro_forward == MOTOR_MICROSTEPS_PER_STEP - 1);
 		}
 		if (ev.value.signals & UI_TASK_SIGNAL_STEP_BACKWARD_MOTOR_A ||
@@ -1626,11 +1702,18 @@ void UITask(void const * argument)
 			micro_backward = (micro_backward + 1) % MOTOR_MICROSTEPS_PER_STEP;
 			steps_backward =
 					(steps_backward + (micro_backward == 0))
-					% UI_BLINK_AFTER_STEPS;
+					% UI_BLINK_AFTER_MOTOR_STEPS;
 			GPIO_Pin_Low(led_forward);
 			GPIO_Pin_Write(led_backward,
-				steps_backward == UI_BLINK_AFTER_STEPS - 1 &&
+				steps_backward == UI_BLINK_AFTER_MOTOR_STEPS - 1 &&
 				micro_backward == MOTOR_MICROSTEPS_PER_STEP - 1);
+		}
+		if (ev.value.signals & UI_TASK_SIGNAL_AUTOTUNING) {
+			autotuning_reads = (autotuning_reads + 1) % UI_BLINK_AFTER_AUTOTUNING_SENSOR_READ;
+			if (autotuning_reads == 0) {
+				GPIO_Pin_Toggle(led1);
+				GPIO_Pin_Toggle(led2);
+			}
 		}
 	}
 
@@ -1736,6 +1819,35 @@ void StartStopTask(void const * argument)
 		}
 	}
   /* USER CODE END StartStopTask */
+}
+
+/* USER CODE BEGIN Header_AutotuningTask */
+/**
+* @brief Function implementing the autotuningTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_AutotuningTask */
+void AutotuningTask(void const * argument)
+{
+  /* USER CODE BEGIN AutotuningTask */
+	TASK_PROLOGUE(AutotuningTask, /* verbose */ true);
+
+	while(true) {
+		osEvent ev;
+		do {
+			Task_SignalWaitGet(
+					ev,
+					AUTOTUNING_TASK_SIGNAL,
+					osWaitForever);
+		} while(!(ev.value.signals & AUTOTUNING_TASK_SIGNAL));
+
+		if (ev.status == osEventSignal &&
+			ev.value.signals & AUTOTUNING_TASK_SIGNAL) {
+			gyroAutotuning(30);
+		}
+	}
+  /* USER CODE END AutotuningTask */
 }
 
  /**

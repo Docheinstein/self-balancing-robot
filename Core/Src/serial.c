@@ -7,7 +7,7 @@
 
 // A larger buffer allow to keep track of more messages,
 // but we have to pay attention not to go out of memory.
-#define TX_RING_SIZE 32768
+#define TX_RING_SIZE 16384
 
 #define TX_MAX_MESSAGE_SIZE 512
 
